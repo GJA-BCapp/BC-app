@@ -1,0 +1,12 @@
+# Cloudflare Pages-configuratie. Controleer bij het aanmaken van het Pages-project of de
+# D1-binding hieronder ook zichtbaar/actief is in het Cloudflare-dashboard (Instellingen →
+# Functions → D1 database bindings) — bij git-gekoppelde Pages-projecten wordt dit soms via
+# het dashboard geregeld in plaats van (of naast) dit bestand, dat kan per moment verschillen.
+name = "bladelscreatief-administratie"
+compatibility_date = "2024-09-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bladelscreatief-db"
+database_id = "0b32bf0b-0fff-4395-ac06-421c660795b7"
