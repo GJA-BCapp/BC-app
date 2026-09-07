@@ -4,5 +4,16 @@ dist
 .env
 .env.local
 *.log
+
+# Volledige back-ups (bevatten leden- en financiele gegevens) - nooit meecommitten
 backup.json
+BladelsCreatief_Backup_*.json
+BladelsCreatief_Backup_*.xlsx
 migratie-data.sql
+
+# Eigen aantekeningen met wachtwoord/API-sleutel - nooit meecommitten
+BEWAREN_belangrijke info.txt
+
+# Documentatie/verslagen en Claude-outputs, geen app-code
+BladelsCreatief-migratieverslag.docx
+Claude outputs/

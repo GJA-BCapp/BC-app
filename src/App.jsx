@@ -5,7 +5,8 @@ import {
   Download, Calendar, Pencil, Trash2, Baby, FileSpreadsheet, LayoutDashboard,
   Filter, ArrowUpRight, ArrowDownRight, Grid3x3, ListChecks, Landmark, Printer,
   ClipboardList, ArrowLeft, CheckSquare, Square, FileText, Link2,
-  Settings, History, RotateCcw, DatabaseBackup, CheckCircle2, AlertCircle, Palette, Clock3, Upload, Phone, MessageCircle, ChevronUp, ChevronDown, Copy, Lock, Sliders
+  Settings, History, RotateCcw, DatabaseBackup, CheckCircle2, AlertCircle, Palette, Clock3, Upload, Phone, MessageCircle, ChevronUp, ChevronDown, Copy, Lock, Sliders,
+  ExternalLink
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -49,10 +50,10 @@ const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
 const EDITEERBARE_TABS = [
   { id: 'leden', label: 'Leden' }, { id: 'workshops', label: 'Workshops' },
   { id: 'vergaderingen', label: 'Vergaderingen' }, { id: 'financien', label: 'Financiën' },
-  { id: 'begroting', label: 'Begroting' },
+  { id: 'begroting', label: 'Begroting' }, { id: 'kalender', label: 'Kalender' },
 ];
 const SEED_ROLPERMISSIES = [
-  { id: 1, patroon: 'voorzitter', tabs: ['leden', 'workshops', 'vergaderingen', 'financien', 'begroting'] },
+  { id: 1, patroon: 'voorzitter', tabs: ['leden', 'workshops', 'vergaderingen', 'financien', 'begroting', 'kalender'] },
   { id: 2, patroon: 'penningmeester', tabs: ['financien', 'begroting'] },
   { id: 3, patroon: 'secretaris', tabs: ['vergaderingen', 'leden'] },
   { id: 4, patroon: 'ledenadministratie', tabs: ['leden', 'workshops'] },
@@ -322,6 +323,75 @@ function fullName(p) {
 function uid(list) {
   return (list.reduce((m, x) => Math.max(m, x.id || 0), 0)) + 1;
 }
+
+/* =========================================================================
+   KALENDER — gedeelde opbouw van de activiteitenlijst (workshops, vergaderingen
+   en overige activiteiten), gebruikt door het Kalender-tabblad, het dashboard-
+   widget en het losse agenda-venster. Eén plek, zodat die drie weergaven altijd
+   hetzelfde tonen.
+========================================================================= */
+const KALENDER_TYPE_LABEL = { workshop: 'Workshop', vergadering: 'Vergadering', overig: 'Overig' };
+const KALENDER_TYPE_TONE = { workshop: 'ochre', vergadering: 'clay', overig: 'sage' };
+
+function bouwKalenderItems({ workshops, vergaderingen, overigeActiviteiten }) {
+  const items = [];
+  (workshops || []).forEach(w => {
+    (w.datums || []).forEach(datum => {
+      if (!datum) return;
+      items.push({
+        id: `workshop-${w.id}-${datum}`, type: 'workshop', titel: w.titel,
+        datum, datumTot: datum, locatie: w.locatie || '',
+        detail: [w.soort, w.dagdeel].filter(Boolean).join(' · '),
+      });
+    });
+  });
+  (vergaderingen || []).forEach(v => {
+    if (!v.datum) return;
+    items.push({
+      id: `vergadering-${v.id}`, type: 'vergadering', titel: v.titel,
+      datum: v.datum, datumTot: v.datum, locatie: v.locatie || '',
+      detail: `${(v.agendapunten || []).length} agendapunten`,
+    });
+  });
+  (overigeActiviteiten || []).forEach(a => {
+    if (!a.datumVan) return;
+    items.push({
+      id: `overig-${a.id}`, type: 'overig', titel: a.titel,
+      datum: a.datumVan, datumTot: a.datumTot || a.datumVan, locatie: a.locatie || '',
+      detail: a.omschrijving || '', ref: a,
+    });
+  });
+  return items.sort((a, b) => a.datum.localeCompare(b.datum) || a.titel.localeCompare(b.titel));
+}
+
+function kalenderPeriodeGrenzen(periode, vanaf, tot) {
+  const vandaag = new Date();
+  const iso = d => d.toISOString().slice(0, 10);
+  if (periode === 'dit_jaar') return { van: `${vandaag.getFullYear()}-01-01`, tot: `${vandaag.getFullYear()}-12-31` };
+  if (periode === 'komend_jaar') return { van: `${vandaag.getFullYear() + 1}-01-01`, tot: `${vandaag.getFullYear() + 1}-12-31` };
+  if (periode === 'komende_3_maanden') {
+    const eind = new Date(vandaag); eind.setMonth(eind.getMonth() + 3);
+    return { van: iso(vandaag), tot: iso(eind) };
+  }
+  if (periode === 'aangepast') return { van: vanaf || null, tot: tot || null };
+  return { van: null, tot: null }; // 'alle'
+}
+
+function kalenderGroepeerPerMaand(items) {
+  const groepen = [];
+  let huidig = null;
+  items.forEach(it => {
+    const sleutel = it.datum.slice(0, 7); // YYYY-MM
+    if (!huidig || huidig.sleutel !== sleutel) {
+      const [jaar, maand] = sleutel.split('-');
+      const naam = MONTH_NAMES[Number(maand) - 1] || '';
+      huidig = { sleutel, label: `${naam.charAt(0).toUpperCase()}${naam.slice(1)} ${jaar}`, items: [] };
+      groepen.push(huidig);
+    }
+    huidig.items.push(it);
+  });
+  return groepen;
+}
 function telLink(tel) {
   return `tel:${(tel || '').replace(/[^0-9+]/g, '')}`;
 }
@@ -506,6 +576,7 @@ const STORAGE_KEYS = {
   beveiliging: 'bladels:beveiliging', standaarden: 'bladels:standaarden', workshopsortering: 'bladels:workshopsortering',
   tfaSecrets: 'bladels:tfa-secrets', tfaVertrouwd: 'bladels:tfa-vertrouwd', rolpermissies: 'bladels:rolpermissies',
   logboek: 'bladels:logboek', prullenbak: 'bladels:prullenbak', sessies: 'bladels:sessies',
+  overigeActiviteiten: 'bladels:overigeactiviteiten',
 };
 
 function useStored(key, seed, shared = false, onSaved) {
@@ -893,6 +964,7 @@ const TABS = [
   { id: 'leden', label: 'Leden', icon: Users },
   { id: 'workshops', label: 'Workshops', icon: Palette },
   { id: 'vergaderingen', label: 'Vergaderingen', icon: ClipboardList },
+  { id: 'kalender', label: 'Kalender', icon: Calendar },
   { id: 'financien', label: 'Financiën', icon: Wallet },
   { id: 'begroting', label: 'Begroting', icon: PiggyBank },
   { id: 'rapportage', label: 'Rapportage', icon: FileSpreadsheet },
@@ -927,6 +999,7 @@ export default function BladelsCreatiefApp() {
   const [budget, setBudget] = useStored('bladels:begroting', SEED_BUDGET, true, flash);
   const [boekjaren, setBoekjaren] = useStored('bladels:boekjaren', SEED_YEARS, true, flash);
   const [vergaderingen, setVergaderingen] = useStored('bladels:vergaderingen', [], true, flash);
+  const [overigeActiviteiten, setOverigeActiviteiten] = useStored('bladels:overigeactiviteiten', [], true, flash);
   const [actielijst, setActielijst] = useStored('bladels:actielijst', [], true, flash);
   const [contributies, setContributies] = useStored('bladels:contributies', [], true, flash);
   const [pins, setPins] = useStored('bladels:pins', {}, true, flash);
@@ -995,6 +1068,15 @@ export default function BladelsCreatiefApp() {
       onLogin={handleLogin} />;
   }
 
+  // Los agenda-venster: geopend via "Open in apart venster" (?venster=agenda). Zelfde inlog als
+  // de hoofd-app (elk apart geopend venster is een eigen browsercontext en vraagt dus zelf om
+  // inloggen), maar toont alleen de compacte komende-activiteitenlijst — geen volledige app-schil.
+  const apartVenster = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('venster') === 'agenda';
+  if (apartVenster) {
+    return <AgendaVenster workshops={workshops} vergaderingen={vergaderingen} overigeActiviteiten={overigeActiviteiten}
+      ingelogd={ingelogd} onLogout={() => handleLogout('handmatig')} />;
+  }
+
   const magBewerken = new Set(bewerkbareTabs(ingelogd.functie, rolpermissies));
   const readOnly = tabId => !magBewerken.has(tabId);
   const isVoorzitter = /voorzitter/i.test(ingelogd.functie || '');
@@ -1028,7 +1110,8 @@ export default function BladelsCreatiefApp() {
         members={members} workshops={workshops} inschrijvingen={inschrijvingen} tx={tx} vergaderingen={vergaderingen} actielijst={actielijst} onNavigate={goTo} readOnly={readOnly} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 pt-5">
-        {tab === 'dashboard' && <Dashboard members={members} workshops={workshops} inschrijvingen={inschrijvingen} tx={tx} budget={budget} setTab={setTab} dagdelen={dagdelen} />}
+        {tab === 'dashboard' && <Dashboard members={members} workshops={workshops} inschrijvingen={inschrijvingen} tx={tx} budget={budget} setTab={setTab} dagdelen={dagdelen}
+          vergaderingen={vergaderingen} overigeActiviteiten={overigeActiviteiten} />}
         {tab === 'leden' && <LedenTab members={members} setMembers={setMembers} readOnly={readOnly('leden')}
           contributies={contributies} setContributies={setContributies} boekjaren={boekjaren} tx={tx} setTx={setTx} accounts={accounts}
           dagdelen={dagdelen}
@@ -1041,6 +1124,9 @@ export default function BladelsCreatiefApp() {
         {tab === 'vergaderingen' && <VergaderingenTab members={members} vergaderingen={vergaderingen} setVergaderingen={setVergaderingen} actielijst={actielijst} setActielijst={setActielijst}
           agendapuntenVooraf={agendapuntenVooraf} agendapuntenAfsluitend={agendapuntenAfsluitend} logoHoogteCm={standaarden.logoHoogteCm}
           readOnly={readOnly('vergaderingen')} onTrash={trashIt} onLog={logAction} />}
+        {tab === 'kalender' && <KalenderTab workshops={workshops} vergaderingen={vergaderingen}
+          overigeActiviteiten={overigeActiviteiten} setOverigeActiviteiten={setOverigeActiviteiten}
+          readOnly={readOnly('kalender')} onTrash={trashIt} onLog={logAction} />}
         {tab === 'financien' && <FinancienTab tx={tx} setTx={setTx} accounts={accounts} boekjaren={boekjaren} setBoekjaren={setBoekjaren}
           members={members} contributies={contributies} setContributies={setContributies}
           workshops={workshops} inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen}
@@ -1062,9 +1148,10 @@ export default function BladelsCreatiefApp() {
             budget={budget} setBudget={setBudget} actielijst={actielijst} setActielijst={setActielijst}
             contributies={contributies} setContributies={setContributies}
             vergaderingen={vergaderingen} setVergaderingen={setVergaderingen}
+            overigeActiviteiten={overigeActiviteiten} setOverigeActiviteiten={setOverigeActiviteiten}
             magLeden={magBewerken.has('leden')} magWorkshops={magBewerken.has('workshops')} magFinancien={magBewerken.has('financien')} magVergaderingen={magBewerken.has('vergaderingen')}
             magLedenImporteren={magBewerken.has('leden')} magWorkshopsImporteren={magBewerken.has('workshops')} magFinancienImporteren={magBewerken.has('financien')}
-            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen }}
+            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen, overigeActiviteiten }}
             onLog={logAction} />
         )}
       </main>
@@ -1212,7 +1299,7 @@ function GlobalSearch({ members, workshops, inschrijvingen, tx, vergaderingen, a
 /* =========================================================================
    DASHBOARD
 ========================================================================= */
-function Dashboard({ members, workshops, inschrijvingen, tx, budget, setTab, dagdelen }) {
+function Dashboard({ members, workshops, inschrijvingen, tx, budget, setTab, dagdelen, vergaderingen, overigeActiviteiten }) {
   const actief = members.filter(m => m.status === 'actief');
   const inactief = members.length - actief.length;
   const actieveInschrijvingen = inschrijvingen.filter(i => i.status === 'ingeschreven');
@@ -1248,6 +1335,14 @@ function Dashboard({ members, workshops, inschrijvingen, tx, budget, setTab, dag
   }));
 
   const recent = [...tx].sort((a, b) => (b.datum || '').localeCompare(a.datum || '')).slice(0, 6);
+
+  const vandaagIso = new Date().toISOString().slice(0, 10);
+  const komendeActiviteiten = bouwKalenderItems({ workshops, vergaderingen, overigeActiviteiten })
+    .filter(it => it.datum >= vandaagIso).slice(0, 5);
+
+  function openAgendaVenster() {
+    window.open(`${window.location.origin}${window.location.pathname}?venster=agenda`, 'BladelsCreatiefAgenda', 'width=380,height=640,resizable=yes,scrollbars=yes');
+  }
 
   return (
     <div className="space-y-6">
@@ -1319,6 +1414,34 @@ function Dashboard({ members, workshops, inschrijvingen, tx, budget, setTab, dag
           </div>
         </Card>
       </div>
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Calendar size={16} style={{ color: C.clay }} />
+            <h3 className="font-semibold" style={{ fontFamily: 'Fraunces, serif', color: C.ink }}>Komende activiteiten</h3>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={openAgendaVenster} className="text-xs underline flex items-center gap-1" style={{ color: C.clay }}>
+              <ExternalLink size={12} /> Apart venster
+            </button>
+            <button onClick={() => setTab('kalender')} className="text-xs underline" style={{ color: C.clay }}>Volledige kalender →</button>
+          </div>
+        </div>
+        {komendeActiviteiten.length ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+            {komendeActiviteiten.map(it => (
+              <div key={it.id} className="px-3 py-2 rounded-lg" style={{ background: C.paperDim }}>
+                <Badge tone={KALENDER_TYPE_TONE[it.type]}>{KALENDER_TYPE_LABEL[it.type]}</Badge>
+                <p className="text-sm font-medium mt-1 truncate" title={it.titel}>{it.titel}</p>
+                <p className="text-xs" style={{ color: C.inkSoft }}>{fmtDate(it.datum)}{it.locatie ? ' · ' + it.locatie : ''}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm" style={{ color: C.inkSoft }}>Geen aankomende activiteiten gevonden.</p>
+        )}
+      </Card>
     </div>
   );
 }
@@ -2247,8 +2370,20 @@ function AanwezigenField({ value, onChange, kandidaten }) {
 function MeetingList({ members, vergaderingen, setVergaderingen, actielijst, setActielijst, agendapuntenVooraf, agendapuntenAfsluitend, onOpen, onOpenActielijst, readOnly, onTrash, onLog }) {
   const [showNew, setShowNew] = useState(false);
   const [delId, setDelId] = useState(null);
+  const [tijd, setTijd] = useState('aankomend');
   const openActies = actielijst.filter(a => a.status !== 'klaar');
-  const sorted = [...vergaderingen].sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
+  // "Aankomend"/"geweest" wordt automatisch bepaald uit de datum t.o.v. vandaag — geen aparte
+  // status om bij te houden (in tegenstelling tot workshops, waar "open voor inschrijving" wél
+  // een bewuste keuze is die niet uit de datum is af te leiden).
+  const vandaagIso = new Date().toISOString().slice(0, 10);
+  const gefilterd = vergaderingen.filter(v => {
+    if (tijd === 'aankomend') return (v.datum || '') >= vandaagIso;
+    if (tijd === 'geweest') return (v.datum || '') < vandaagIso;
+    return true;
+  });
+  const sorted = [...gefilterd].sort((a, b) => tijd === 'aankomend'
+    ? (a.datum || '').localeCompare(b.datum || '')
+    : (b.datum || '').localeCompare(a.datum || ''));
 
   function createMeeting(f, neemOver, standaardPunten) {
     const id = uid(vergaderingen);
@@ -2290,7 +2425,12 @@ function MeetingList({ members, vergaderingen, setVergaderingen, actielijst, set
           <h2 className="font-semibold" style={{ fontFamily: 'Fraunces, serif', fontSize: 18, color: C.ink }}>Vergaderingen</h2>
           <p className="text-xs" style={{ color: C.inkSoft }}>Agenda, notulen en actiepunten in samenhang — met export naar Word.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <select value={tijd} onChange={e => setTijd(e.target.value)} className={inputCls} style={inputStyle}>
+            <option value="aankomend">Aankomend</option>
+            <option value="geweest">Geweest</option>
+            <option value="alle">Alle</option>
+          </select>
           <Btn tone="outline" icon={CheckSquare} onClick={onOpenActielijst}>
             Actielijst{openActies.length ? ` (${openActies.length} open)` : ''}
           </Btn>
@@ -2320,7 +2460,11 @@ function MeetingList({ members, vergaderingen, setVergaderingen, actielijst, set
         })}
         {!sorted.length && (
           <div className="sm:col-span-2">
-            <EmptyState icon={ClipboardList} text="Nog geen vergaderingen vastgelegd. Maak een nieuwe vergadering aan om agenda en notulen te koppelen." />
+            <EmptyState icon={ClipboardList} text={
+              tijd === 'aankomend' ? 'Geen aankomende vergaderingen gepland.'
+                : tijd === 'geweest' ? 'Nog geen eerdere vergaderingen gevonden.'
+                : 'Nog geen vergaderingen vastgelegd. Maak een nieuwe vergadering aan om agenda en notulen te koppelen.'
+            } />
           </div>
         )}
       </div>
@@ -3236,6 +3380,229 @@ function BetaalWorkshopForm({ inschrijving, accounts, onSave, onClose }) {
 /* =========================================================================
    FINANCIËN
 ========================================================================= */
+/* =========================================================================
+   KALENDER-TABBLAD — gecombineerd overzicht van workshops, vergaderingen en
+   overige activiteiten (nieuwjaarsborrel e.d.), met filters, export naar
+   Word/PDF en een los te openen agenda-venster.
+========================================================================= */
+function KalenderTab({ workshops, vergaderingen, overigeActiviteiten, setOverigeActiviteiten, readOnly, onTrash, onLog }) {
+  const [typeFilter, setTypeFilter] = useState({ workshop: true, vergadering: true, overig: true });
+  const [periode, setPeriode] = useState('dit_jaar');
+  const [vanaf, setVanaf] = useState(new Date().toISOString().slice(0, 10));
+  const [tot, setTot] = useState(new Date().toISOString().slice(0, 10));
+  const [tijd, setTijd] = useState('aankomend');
+  const [showNew, setShowNew] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [delId, setDelId] = useState(null);
+
+  const alleItems = bouwKalenderItems({ workshops, vergaderingen, overigeActiviteiten });
+  const vandaagIso = new Date().toISOString().slice(0, 10);
+  const grenzen = kalenderPeriodeGrenzen(periode, vanaf, tot);
+
+  const gefilterd = alleItems.filter(it => {
+    if (!typeFilter[it.type]) return false;
+    if (tijd === 'aankomend' && it.datum < vandaagIso) return false;
+    if (tijd === 'geweest' && it.datum >= vandaagIso) return false;
+    if (grenzen.van && it.datum < grenzen.van) return false;
+    if (grenzen.tot && it.datum > grenzen.tot) return false;
+    return true;
+  });
+  const groepen = kalenderGroepeerPerMaand(gefilterd);
+
+  function toggleType(t) { setTypeFilter(f => ({ ...f, [t]: !f[t] })); }
+
+  function saveActiviteit(f) {
+    if (editItem) {
+      setOverigeActiviteiten(overigeActiviteiten.map(a => a.id === editItem.id ? { ...a, ...f } : a));
+      onLog(`Activiteit bijgewerkt: ${f.titel}`, 'kalender');
+    } else {
+      const id = uid(overigeActiviteiten);
+      setOverigeActiviteiten([...overigeActiviteiten, { id, ...f }]);
+      onLog(`Activiteit toegevoegd: ${f.titel} (${f.datumVan})`, 'kalender');
+    }
+    setShowNew(false);
+    setEditItem(null);
+  }
+  function removeActiviteit(id) {
+    const a = overigeActiviteiten.find(x => x.id === id);
+    setOverigeActiviteiten(overigeActiviteiten.filter(x => x.id !== id));
+    if (a) { onTrash('activiteit', a); onLog(`Activiteit verwijderd: ${a.titel}`, 'kalender'); }
+  }
+
+  function exporteerWord() {
+    const rijenHtml = gefilterd.map(it => `<tr><td>${fmtDate(it.datum)}${it.datumTot && it.datumTot !== it.datum ? ' t/m ' + fmtDate(it.datumTot) : ''}</td><td>${escapeHtml(KALENDER_TYPE_LABEL[it.type])}</td><td>${escapeHtml(it.titel)}</td><td>${escapeHtml(it.locatie || '—')}</td><td>${escapeHtml(it.detail || '—')}</td></tr>`).join('');
+    const bodyHtml = `<h1>Activiteitenkalender</h1>
+<p class="meta">Gegenereerd op ${new Date().toLocaleDateString('nl-NL')} · ${gefilterd.length} activiteit(en)</p>
+<table>
+  <thead><tr><th>Datum</th><th>Type</th><th>Titel</th><th>Locatie</th><th>Details</th></tr></thead>
+  <tbody>${rijenHtml || '<tr><td colspan="5"><em>Geen activiteiten gevonden binnen deze filters.</em></td></tr>'}</tbody>
+</table>`;
+    downloadWordDoc({ titel: 'Activiteitenkalender', filename: `BladelsCreatief_Activiteitenkalender_${new Date().toISOString().slice(0, 10)}.doc`, bodyHtml });
+  }
+  function exporteerPdf() {
+    downloadPrintableHtml({
+      titel: 'Activiteitenkalender',
+      subtitel: `${gefilterd.length} activiteit(en)`,
+      header: ['Datum', 'Type', 'Titel', 'Locatie', 'Details'],
+      rows: gefilterd.map(it => [
+        fmtDate(it.datum) + (it.datumTot && it.datumTot !== it.datum ? ' t/m ' + fmtDate(it.datumTot) : ''),
+        KALENDER_TYPE_LABEL[it.type], it.titel, it.locatie || '—', it.detail || '—',
+      ]),
+    });
+  }
+  function openAgendaVenster() {
+    window.open(`${window.location.origin}${window.location.pathname}?venster=agenda`, 'BladelsCreatiefAgenda', 'width=380,height=640,resizable=yes,scrollbars=yes');
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="font-semibold" style={{ fontFamily: 'Fraunces, serif', fontSize: 18, color: C.ink }}>Kalender</h2>
+          <p className="text-xs" style={{ color: C.inkSoft }}>Workshops, vergaderingen en overige activiteiten in één overzicht.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Btn tone="outline" icon={ExternalLink} onClick={openAgendaVenster}>Apart venster</Btn>
+          <Btn tone="outline" icon={FileText} onClick={exporteerWord} disabled={!gefilterd.length}>Word</Btn>
+          <Btn tone="outline" icon={Printer} onClick={exporteerPdf} disabled={!gefilterd.length}>PDF</Btn>
+          {!readOnly && <Btn icon={Plus} onClick={() => { setEditItem(null); setShowNew(true); }}>Activiteit toevoegen</Btn>}
+        </div>
+      </div>
+
+      <Card className="p-3">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-3">
+            {['workshop', 'vergadering', 'overig'].map(t => (
+              <label key={t} className="flex items-center gap-1.5 text-sm">
+                <input type="checkbox" checked={typeFilter[t]} onChange={() => toggleType(t)} />
+                {KALENDER_TYPE_LABEL[t]}
+              </label>
+            ))}
+          </div>
+          <select value={tijd} onChange={e => setTijd(e.target.value)} className={inputCls} style={inputStyle}>
+            <option value="aankomend">Aankomend</option>
+            <option value="geweest">Geweest</option>
+            <option value="alle">Alle</option>
+          </select>
+          <select value={periode} onChange={e => setPeriode(e.target.value)} className={inputCls} style={inputStyle}>
+            <option value="dit_jaar">Dit jaar</option>
+            <option value="komend_jaar">Komend jaar</option>
+            <option value="komende_3_maanden">Komende 3 maanden</option>
+            <option value="aangepast">Aangepaste periode</option>
+            <option value="alle">Alle periodes</option>
+          </select>
+          {periode === 'aangepast' && (
+            <div className="flex items-center gap-2">
+              <input type="date" value={vanaf} onChange={e => setVanaf(e.target.value)} className={inputCls} style={inputStyle} />
+              <span className="text-sm" style={{ color: C.inkSoft }}>t/m</span>
+              <input type="date" value={tot} onChange={e => setTot(e.target.value)} className={inputCls} style={inputStyle} />
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {groepen.length ? groepen.map(groep => (
+        <div key={groep.sleutel}>
+          <h3 className="text-sm font-semibold mb-2" style={{ color: C.inkSoft }}>{groep.label}</h3>
+          <div className="space-y-2">
+            {groep.items.map(it => (
+              <Card key={it.id} className="p-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Badge tone={KALENDER_TYPE_TONE[it.type]}>{KALENDER_TYPE_LABEL[it.type]}</Badge>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{it.titel}</p>
+                    <p className="text-xs" style={{ color: C.inkSoft }}>
+                      {fmtDate(it.datum)}{it.datumTot && it.datumTot !== it.datum ? ' t/m ' + fmtDate(it.datumTot) : ''}
+                      {it.locatie ? ' · ' + it.locatie : ''}{it.detail ? ' · ' + it.detail : ''}
+                    </p>
+                  </div>
+                </div>
+                {it.type === 'overig' && !readOnly && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => { setEditItem(it.ref); setShowNew(true); }} className="p-1.5 rounded hover:bg-black/5" style={{ color: C.inkSoft }}><Pencil size={14} /></button>
+                    <button onClick={() => setDelId(it.ref.id)} className="p-1.5 rounded hover:bg-black/5" style={{ color: C.rose }}><Trash2 size={14} /></button>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )) : (
+        <EmptyState icon={Calendar} text="Geen activiteiten gevonden binnen deze filters." />
+      )}
+
+      {showNew && (
+        <ActiviteitModal item={editItem} onSave={saveActiviteit} onClose={() => { setShowNew(false); setEditItem(null); }} />
+      )}
+      {delId != null && (
+        <ConfirmModal message="Deze activiteit verwijderen?" onConfirm={() => { removeActiviteit(delId); setDelId(null); }} onCancel={() => setDelId(null)} />
+      )}
+    </div>
+  );
+}
+
+function ActiviteitModal({ item, onSave, onClose }) {
+  const [f, setF] = useState(item
+    ? { titel: item.titel, datumVan: item.datumVan, datumTot: item.datumTot || '', locatie: item.locatie || '', omschrijving: item.omschrijving || '' }
+    : { titel: '', datumVan: new Date().toISOString().slice(0, 10), datumTot: '', locatie: '', omschrijving: '' });
+  function upd(k, v) { setF(s => ({ ...s, [k]: v })); }
+  return (
+    <Modal title={item ? 'Activiteit bewerken' : 'Nieuwe activiteit'} onClose={onClose}>
+      <div className="space-y-3">
+        <Field label="Titel"><input className={inputCls} style={inputStyle} value={f.titel} onChange={e => upd('titel', e.target.value)} placeholder="Bijv. Nieuwjaarsborrel" /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Datum (van)"><input type="date" className={inputCls} style={inputStyle} value={f.datumVan} onChange={e => upd('datumVan', e.target.value)} /></Field>
+          <Field label="Datum (tot, optioneel)"><input type="date" className={inputCls} style={inputStyle} value={f.datumTot} onChange={e => upd('datumTot', e.target.value)} /></Field>
+        </div>
+        <Field label="Locatie"><input className={inputCls} style={inputStyle} value={f.locatie} onChange={e => upd('locatie', e.target.value)} /></Field>
+        <Field label="Omschrijving"><textarea className={inputCls} style={inputStyle} rows={3} value={f.omschrijving} onChange={e => upd('omschrijving', e.target.value)} /></Field>
+      </div>
+      <div className="flex justify-end gap-2 mt-5">
+        <Btn tone="ghost" onClick={onClose}>Annuleren</Btn>
+        <Btn onClick={() => onSave(f)} disabled={!f.titel || !f.datumVan}>Opslaan</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+/* Los agenda-venster (?venster=agenda) — compacte, alleen-lezen weergave van de komende
+   activiteiten, bedoeld om in een eigen browservenster naast de rest van je werk open te
+   houden. Ververst niet vanzelf (het is een gewone paginalading); sluiten en opnieuw openen
+   haalt de actuele stand op. Een browser kan dit venster niet dwingen om altijd bovenop andere
+   programma's te blijven staan — dat is een besturingssysteembeperking, geen appkeuze. */
+function AgendaVenster({ workshops, vergaderingen, overigeActiviteiten, ingelogd, onLogout }) {
+  const vandaagIso = new Date().toISOString().slice(0, 10);
+  const items = bouwKalenderItems({ workshops, vergaderingen, overigeActiviteiten }).filter(it => it.datum >= vandaagIso).slice(0, 20);
+  const groepen = kalenderGroepeerPerMaand(items);
+  return (
+    <div className="min-h-screen w-full p-4" style={{ background: C.paper, color: C.ink, fontFamily: 'Inter, ui-sans-serif, system-ui' }}>
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="font-semibold" style={{ fontFamily: 'Fraunces, serif', fontSize: 16, color: C.ink }}>Komende activiteiten</h1>
+        <button onClick={onLogout} className="text-xs underline" style={{ color: C.inkSoft }}>Uitloggen</button>
+      </div>
+      <p className="text-xs mb-3" style={{ color: C.inkSoft }}>Ingelogd als {fullName(ingelogd)} · ververst niet vanzelf — sluit en open opnieuw voor de laatste stand.</p>
+      {groepen.length ? groepen.map(groep => (
+        <div key={groep.sleutel} className="mb-3">
+          <h3 className="text-xs font-semibold mb-1.5" style={{ color: C.inkSoft }}>{groep.label}</h3>
+          <div className="space-y-1.5">
+            {groep.items.map(it => (
+              <div key={it.id} className="p-2 rounded-lg text-sm" style={{ background: C.card, border: `1px solid ${C.border}` }}>
+                <div className="flex items-center gap-1.5">
+                  <Badge tone={KALENDER_TYPE_TONE[it.type]}>{KALENDER_TYPE_LABEL[it.type]}</Badge>
+                  <span className="font-medium truncate">{it.titel}</span>
+                </div>
+                <p className="text-xs mt-0.5" style={{ color: C.inkSoft }}>{fmtDate(it.datum)}{it.locatie ? ' · ' + it.locatie : ''}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )) : (
+        <p className="text-sm" style={{ color: C.inkSoft }}>Geen aankomende activiteiten.</p>
+      )}
+    </div>
+  );
+}
+
 function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, contributies, setContributies, workshops, inschrijvingen, setInschrijvingen, readOnly, initialQuery, onTrash, onLog }) {
   const years = Array.from(new Set([...boekjaren, ...tx.map(t => t.jaar)])).sort((a, b) => b - a);
   const huidigJaar = new Date().getFullYear();
@@ -4058,6 +4425,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
   dagdelen, setDagdelen,
   workshopSoorten, setWorkshopSoorten, agendapuntenVooraf, setAgendapuntenVooraf, agendapuntenAfsluitend, setAgendapuntenAfsluitend,
   budget, setBudget, actielijst, setActielijst, contributies, setContributies, vergaderingen, setVergaderingen,
+  overigeActiviteiten, setOverigeActiviteiten,
   magLeden, magWorkshops, magFinancien, magVergaderingen,
   magLedenImporteren, magWorkshopsImporteren, magFinancienImporteren, backupData, onLog }) {
   const [sectie, setSectie] = useState('rollen');
@@ -4102,6 +4470,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     if (entry.type === 'inschrijving') setInschrijvingen([...inschrijvingen, entry.data]);
     if (entry.type === 'boeking') setTx([...tx, entry.data]);
     if (entry.type === 'vergadering') setVergaderingen([...vergaderingen, entry.data]);
+    if (entry.type === 'activiteit') setOverigeActiviteiten([...overigeActiviteiten, entry.data]);
     setPrullenbak(prullenbak.filter(e => e.id !== entry.id));
     onLog(`Hersteld uit prullenbak: ${entry.type} — ${trashLabel(entry)}`, 'instellingen');
   }
@@ -4114,6 +4483,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     if (entry.type === 'inschrijving') return entry.data.naam;
     if (entry.type === 'boeking') return entry.data.omschrijving || entry.data.grootboek_naam;
     if (entry.type === 'vergadering') return entry.data.titel;
+    if (entry.type === 'activiteit') return entry.data.titel;
     return '—';
   }
 
@@ -4132,7 +4502,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
   }
 
   function exportBackupExcel() {
-    const { members: m, workshops: w, inschrijvingen: i, tx: t, accounts: acc, budget: bud, boekjaren: bj, vergaderingen: verg, actielijst: act, contributies: contr } = backupData;
+    const { members: m, workshops: w, inschrijvingen: i, tx: t, accounts: acc, budget: bud, boekjaren: bj, vergaderingen: verg, actielijst: act, contributies: contr, overigeActiviteiten: oa } = backupData;
     const wb = XLSX.utils.book_new();
     const voegToe = (naam, aoa) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), naam.slice(0, 31));
 
@@ -4192,6 +4562,11 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
       }),
     ]);
 
+    voegToe('Overige activiteiten', [
+      ['Titel', 'Datum (van)', 'Datum (tot)', 'Locatie', 'Omschrijving'],
+      ...(oa || []).map(x => [x.titel, x.datumVan, x.datumTot || x.datumVan, x.locatie, x.omschrijving]),
+    ]);
+
     XLSX.writeFile(wb, `BladelsCreatief_Backup_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
@@ -4232,6 +4607,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     if (herstelData.contributies) setContributies(herstelData.contributies);
     if (herstelData.rolpermissies) setRolpermissies(herstelData.rolpermissies);
     if (herstelData.begrotingKoppelingen) setBegrotingKoppelingen(herstelData.begrotingKoppelingen);
+    if (herstelData.overigeActiviteiten) setOverigeActiviteiten(herstelData.overigeActiviteiten);
     onLog(`Volledige back-up hersteld (bestand van ${herstelData.export_datum ? fmtDate(herstelData.export_datum) : 'onbekende datum'})`, 'instellingen');
     setToonBevestiging(false);
     setHerstelResultaat(true);
