@@ -39,7 +39,7 @@ function saldoBoekjaar(tx, rekening, jaar) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '01-09-2026';
+const APP_VERSIE = '07-09-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -2376,12 +2376,24 @@ function MeetingList({ members, vergaderingen, setVergaderingen, actielijst, set
   // status om bij te houden (in tegenstelling tot workshops, waar "open voor inschrijving" wél
   // een bewuste keuze is die niet uit de datum is af te leiden).
   const vandaagIso = new Date().toISOString().slice(0, 10);
-  const gefilterd = vergaderingen.filter(v => {
-    if (tijd === 'aankomend') return (v.datum || '') >= vandaagIso;
-    if (tijd === 'geweest') return (v.datum || '') < vandaagIso;
-    return true;
-  });
-  const sorted = [...gefilterd].sort((a, b) => tijd === 'aankomend'
+  let gefilterd;
+  if (tijd === 'recent') {
+    // De laatste 2 afgelopen vergaderingen, plus alle nog komende — zodat je niet het hele
+    // archief hoeft te doorspitten om toch de recente geschiedenis erbij te zien.
+    const laatsteAfgelopen = vergaderingen
+      .filter(v => (v.datum || '') < vandaagIso)
+      .sort((a, b) => (b.datum || '').localeCompare(a.datum || ''))
+      .slice(0, 2);
+    const komend = vergaderingen.filter(v => (v.datum || '') >= vandaagIso);
+    gefilterd = [...laatsteAfgelopen, ...komend];
+  } else {
+    gefilterd = vergaderingen.filter(v => {
+      if (tijd === 'aankomend') return (v.datum || '') >= vandaagIso;
+      if (tijd === 'geweest') return (v.datum || '') < vandaagIso;
+      return true;
+    });
+  }
+  const sorted = [...gefilterd].sort((a, b) => (tijd === 'aankomend' || tijd === 'recent')
     ? (a.datum || '').localeCompare(b.datum || '')
     : (b.datum || '').localeCompare(a.datum || ''));
 
@@ -2428,6 +2440,7 @@ function MeetingList({ members, vergaderingen, setVergaderingen, actielijst, set
         <div className="flex flex-wrap gap-2 items-center">
           <select value={tijd} onChange={e => setTijd(e.target.value)} className={inputCls} style={inputStyle}>
             <option value="aankomend">Aankomend</option>
+            <option value="recent">Recent (laatste 2) + aankomend</option>
             <option value="geweest">Geweest</option>
             <option value="alle">Alle</option>
           </select>
