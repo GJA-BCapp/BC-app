@@ -2163,8 +2163,7 @@ function downloadWordDoc({ titel, filename, bodyHtml, footerHtml }) {
 <title>${escapeHtml(titel)}</title>
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
-  @page Section1 { margin: 2.2cm; ${footerHtml ? 'mso-footer: f1;' : ''} }
-  div.Section1 { page: Section1; }
+  @page { margin: 2.2cm; }
   body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1410; }
   h1 { font-size: 19pt; color: ${C.clayDeep}; margin: 10px 0 2px; }
   h2 { font-size: 13.5pt; color: ${C.clay}; border-bottom: 1px solid #cccccc; padding-bottom: 3px; margin-top: 26px; }
@@ -2177,13 +2176,12 @@ function downloadWordDoc({ titel, filename, bodyHtml, footerHtml }) {
   .status-open { color: ${C.rose}; font-weight: bold; }
   .status-klaar { color: ${C.sageDeep}; font-weight: bold; }
   .bar { height: 3px; background: linear-gradient(90deg, ${C.clayDeep}, ${C.clay}, ${C.sage}, ${C.ochre}, ${C.rose}); margin: 4px 0 16px; }
+  .brief-voettekst { border-top: 1px solid #999999; padding-top: 6px; margin-top: 20px; font-size: 10pt; }
 </style>
 </head>
 <body>
-<div class="Section1">
 ${bodyMetCid}
-</div>
-${footerHtml ? `<div style="mso-element:footer" id="f1"><div style="border-top:1px solid #999999;padding-top:4px;font-size:10pt;">${footerHtml}</div></div>` : ''}
+${footerHtml ? `<div class="brief-voettekst">${footerHtml}</div>` : ''}
 </body>
 </html>`;
 
