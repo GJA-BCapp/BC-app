@@ -39,7 +39,7 @@ function saldoBoekjaar(tx, rekening, jaar) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '07-09-2026';
+const APP_VERSIE = '10-09-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -1508,6 +1508,12 @@ function LedenTab({ members, setMembers, readOnly, contributies, setContributies
   }).sort((a, b) => fullName(a).localeCompare(fullName(b)));
 
   const [toonWelkomstbrief, setToonWelkomstbrief] = useState(null);
+  const [delId, setDelId] = useState(null);
+  function removeMember(id) {
+    const m = members.find(x => x.id === id);
+    setMembers(members.filter(x => x.id !== id));
+    if (m) { onTrash('lid', m); onLog(`Lid verwijderd: ${fullName(m)}`, 'leden'); }
+  }
   const [toonUitschrijfbrief, setToonUitschrijfbrief] = useState(null);
   function saveMember(data) {
     const wasNieuw = !data.id;
@@ -1599,6 +1605,9 @@ function LedenTab({ members, setMembers, readOnly, contributies, setContributies
                       {!readOnly && (
                         <button onClick={() => { setEditing(m); setShowForm(true); }} className="p-1.5 rounded hover:bg-black/5" style={{ color: C.inkSoft }}><Pencil size={14} /></button>
                       )}
+                      {!readOnly && m.status === 'inactief' && (
+                        <button onClick={() => setDelId(m.id)} title="Verwijderen (alleen mogelijk bij status Inactief)" className="p-1.5 rounded hover:bg-black/5" style={{ color: C.rose }}><Trash2 size={14} /></button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1678,6 +1687,9 @@ function LedenTab({ members, setMembers, readOnly, contributies, setContributies
       {toonUitschrijfbrief && (
         <UitschrijfbriefModal lid={toonUitschrijfbrief} standaarden={standaarden} ingelogd={ingelogd} onClose={() => setToonUitschrijfbrief(null)} />
       )}
+      {delId != null && (
+        <ConfirmModal message="Dit inactieve lid definitief verwijderen? Het lid is terug te vinden in de prullenbak (Instellingen)." onConfirm={() => { removeMember(delId); setDelId(null); }} onCancel={() => setDelId(null)} />
+      )}
     </div>
   );
 }
@@ -1689,7 +1701,7 @@ function WelkomstbriefModal({ lid, standaarden, ingelogd, onClose }) {
   const [afzenderFunctie, setAfzenderFunctie] = useState(ingelogd ? (ingelogd.functie || '') : '');
   function download() {
     const body = welkomstbriefWordHtml(lid, standaarden, afzenderNaam, afzenderFunctie, dagdeelKeuze, ingangsdatum, standaarden.logoHoogteCm);
-    downloadWordDoc({ titel: 'Welkomstbrief', filename: `BladelsCreatief_Welkomstbrief_${fullName(lid).replace(/\s+/g, '_')}.doc`, bodyHtml: body, footerHtml: ledenbriefFooterHtml(standaarden) });
+    downloadWordDoc({ titel: 'Welkomstbrief', filename: `BladelsCreatief_Welkomstbrief_${fullName(lid).replace(/\s+/g, '_')}.doc`, bodyHtml: body, footerHtml: ledenbriefFooterHtml(standaarden), margeCm: 0.75 });
     onClose();
   }
   return (
@@ -1718,7 +1730,7 @@ function UitschrijfbriefModal({ lid, standaarden, ingelogd, onClose }) {
   const [afzenderNaam, setAfzenderNaam] = useState(ingelogd ? fullName(ingelogd) : '');
   function download() {
     const body = uitschrijfbriefWordHtml(lid, einddatum, afzenderNaam, standaarden.logoHoogteCm);
-    downloadWordDoc({ titel: 'Uitschrijfbevestiging', filename: `BladelsCreatief_Uitschrijfbevestiging_${fullName(lid).replace(/\s+/g, '_')}.doc`, bodyHtml: body });
+    downloadWordDoc({ titel: 'Uitschrijfbevestiging', filename: `BladelsCreatief_Uitschrijfbevestiging_${fullName(lid).replace(/\s+/g, '_')}.doc`, bodyHtml: body, footerHtml: ledenbriefFooterHtml(standaarden), margeCm: 0.75 });
     onClose();
   }
   return (
@@ -2153,7 +2165,7 @@ function logoImgTag(hoogteCm) {
   const w = Math.round(h * (400 / 208));
   return `<img src="${LOGO_URI}" width="${w}" height="${h}" style="height:${hoogteCm}cm;max-height:${hoogteCm}cm;width:${w}px;display:block;margin-bottom:4px;" />`;
 }
-function downloadWordDoc({ titel, filename, bodyHtml, footerHtml }) {
+function downloadWordDoc({ titel, filename, bodyHtml, footerHtml, margeCm }) {
   const logoBase64 = LOGO_URI.split(',')[1] || '';
   const bodyMetCid = bodyHtml.split(LOGO_URI).join('cid:logo.png');
   const html = `<!DOCTYPE html>
@@ -2163,7 +2175,7 @@ function downloadWordDoc({ titel, filename, bodyHtml, footerHtml }) {
 <title>${escapeHtml(titel)}</title>
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
-  @page { margin: 2.2cm; }
+  @page { margin: ${margeCm || 2.2}cm; }
   body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1a1410; }
   h1 { font-size: 19pt; color: ${C.clayDeep}; margin: 10px 0 2px; }
   h2 { font-size: 13.5pt; color: ${C.clay}; border-bottom: 1px solid #cccccc; padding-bottom: 3px; margin-top: 26px; }
@@ -2176,7 +2188,11 @@ function downloadWordDoc({ titel, filename, bodyHtml, footerHtml }) {
   .status-open { color: ${C.rose}; font-weight: bold; }
   .status-klaar { color: ${C.sageDeep}; font-weight: bold; }
   .bar { height: 3px; background: linear-gradient(90deg, ${C.clayDeep}, ${C.clay}, ${C.sage}, ${C.ochre}, ${C.rose}); margin: 4px 0 16px; }
-  .brief-voettekst { border-top: 1px solid #999999; padding-top: 6px; margin-top: 20px; font-size: 10pt; }
+  .brief-voettekst { border-top: 1px solid #999999; padding-top: 6px; margin-top: 0; font-size: 10pt; }
+  .brief p { margin: 0 0 2px; line-height: 1.35; }
+  .brief .witregel { margin: 0; line-height: 1.35; }
+  .brief table td { border: none; padding: 0 6px 0 0; line-height: 1.35; }
+  .brief table { margin: 0; }
 </style>
 </head>
 <body>
@@ -2392,34 +2408,56 @@ function welkomstbriefWordHtml(lid, standaarden, afzenderNaam, afzenderFunctie, 
   const vandaag = new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
   const contributieResterend = berekenProrataContributie(standaarden.jaarcontributie, ingangsdatum || lid.lidsinds);
   const jaar = new Date().getFullYear();
+  const wr = '<p class="witregel">&nbsp;</p>';
   return `${logoImgTag(logoHoogteCm)}
+<div class="brief">
+${wr}
 <p>Bladel, ${vandaag}</p>
+${wr}${wr}
 <p>Hallo ${escapeHtml(lid.voornaam)},</p>
+${wr}
 <p>Welkom bij BladelsCreatief!</p>
 <p>Bedankt voor je inschrijving, ik heb het formulier ontvangen — deze brief is ter controle van je gegevens.</p>
-<table style="margin:10px 0;"><tr><td style="border:none;">${escapeHtml(fullName(lid))}</td><td style="border:none;">${escapeHtml(lid.email || '—')}</td></tr>
-<tr><td style="border:none;" colspan="2">${escapeHtml(lid.adres || '—')}</td></tr>
-<tr><td style="border:none;">${escapeHtml(lid.postcode || '')} ${escapeHtml(lid.woonplaats || '')}</td><td style="border:none;">${escapeHtml(lid.telefoon || '—')} · ${lid.gebdatum ? fmtDate(lid.gebdatum) : '—'}</td></tr></table>
+<table><tr><td>${escapeHtml(fullName(lid))}</td><td>${escapeHtml(lid.email || '—')}</td></tr>
+<tr><td colspan="2">${escapeHtml(lid.adres || '—')}</td></tr>
+<tr><td>${escapeHtml(lid.postcode || '')} ${escapeHtml(lid.woonplaats || '')}</td><td>${escapeHtml(lid.telefoon || '—')} · ${lid.gebdatum ? fmtDate(lid.gebdatum) : '—'}</td></tr></table>
 <p>Graag een oké retour als de gegevens juist zijn, of het ontbrekende aanvullen.</p>
+${wr}
 <p>We vinden het fijn je bij BladelsCreatief te begroeten. Er ligt een roze map in de kast in het atelier, daarin vind je o.a. de ledenlijst, huishoudelijk reglement en andere zaken ter inzage. Kijk hiervoor ook naar onze website.</p>
-<p>Je mailadres wordt alleen gebruikt voor brieven en mededelingen betreffende BladelsCreatief. Met je mobiele nummer voegen we je toe aan de groeps-app voor de leden van BladelsCreatief. Dit is een één-richting groeps-app die door het bestuur gebruikt wordt om mededelingen te doen of een peiling uit te zetten. Je kunt er niet op reageren en zult dus ook niet 'overladen worden' met reacties van andere leden.</p>
-<p>Reclame en andere zaken worden níet per mail doorgestuurd, deze komen in de roze map op de tafel.</p>
+${wr}
+<p>Je mailadres wordt alleen gebruikt voor brieven en mededelingen betreffende BladelsCreatief. Met je mobiele nummer voegen we je toe aan de groeps-app voor de leden van BladelsCreatief. Dit is een één-richting groeps-app die door het bestuur gebruikt wordt om mededelingen te doen of een peiling uit te zetten. Je kunt er niet op reageren en zult dus ook niet 'overladen worden' met reacties van andere leden. Reclame en andere zaken worden níet per mail doorgestuurd, deze komen in de roze map op de tafel.</p>
+${wr}
 <p>Veel plezier bij de ${escapeHtml(dagdeelKeuze || (lid.dagdelen || []).join(', ') || '(dagdeel)')} groep, veel inspiratie en succes toegewenst!</p>
+${wr}
 <p>De contributie wordt per jaar voldaan en bedraagt voor ${jaar} ${euro(standaarden.jaarcontributie)}. Ik wil je vragen om <strong>${euro(contributieResterend)}</strong> als contributiebedrag voor de rest van dit jaar (vanaf ${fmtDate(ingangsdatum || lid.lidsinds)}) op onderstaand bankrekeningnummer te voldoen.</p>
+${wr}
 <p>Als lid van BladelsCreatief kun je in principe op alle tijden dat we van het atelier gebruikmaken deelnemen aan de bestaande groepen. Het is gewenst om even te overleggen als je van groep wilt wisselen.</p>
-<p>Hartelijke groet,</p>
-<p>${escapeHtml(afzenderNaam)}<br/>${escapeHtml(afzenderFunctie)} BladelsCreatief</p>`;
+${wr}
+<p>Met vriendelijke groet,</p>
+${wr}
+<p>${escapeHtml(afzenderNaam)}<br/>${escapeHtml(afzenderFunctie)} BladelsCreatief</p>
+</div>`;
 }
 
 function uitschrijfbriefWordHtml(lid, einddatum, afzenderNaam, logoHoogteCm) {
   const vandaag = new Date().toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+  const wr = '<p class="witregel">&nbsp;</p>';
   return `${logoImgTag(logoHoogteCm)}
+<div class="brief">
+${wr}
 <p>Bladel, ${vandaag}</p>
+${wr}${wr}
 <p>Hallo ${escapeHtml(lid.voornaam)},</p>
+${wr}
 <p>De opzegging van je lidmaatschap heb ik ontvangen. Bedankt voor de tijd die je bij BladelsCreatief geschilderd hebt. Ik hoop dat je ervan genoten hebt. Wellicht vind je een passend alternatief waarbij je je hobby met veel plezier kunt uitoefenen.</p>
-<p>Ik zal je lidmaatschap per ${fmtDate(einddatum)} beëindigen. Tot die tijd blijf je lid. Je kunt tot die tijd blijven schilderen en deelnemen aan andere activiteiten van onze vereniging.</p>
-<p>Met vriendelijke groet,<br/>Namens het bestuur van BladelsCreatief</p>
-<p>${escapeHtml(afzenderNaam)}</p>`;
+${wr}
+<p>Ik zal je lidmaatschap per ${fmtDate(einddatum)} beëindigen. Tot die tijd blijf je lid en kun je blijven schilderen en deelnemen aan andere activiteiten van onze vereniging.</p>
+${wr}
+<p>Met vriendelijke groet,</p>
+<p>Namens het bestuur van BladelsCreatief</p>
+${wr}
+<p>${escapeHtml(afzenderNaam)}</p>
+</div>`;
 }
 
 
