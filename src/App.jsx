@@ -39,7 +39,7 @@ function saldoBoekjaar(tx, rekening, jaar) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '10-09-2026';
+const APP_VERSIE = '13-09-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
