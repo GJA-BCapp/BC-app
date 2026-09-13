@@ -2189,6 +2189,7 @@ function downloadWordDoc({ titel, filename, bodyHtml, footerHtml, margeCm }) {
   .status-klaar { color: ${C.sageDeep}; font-weight: bold; }
   .bar { height: 3px; background: linear-gradient(90deg, ${C.clayDeep}, ${C.clay}, ${C.sage}, ${C.ochre}, ${C.rose}); margin: 4px 0 16px; }
   .brief-voettekst { border-top: 1px solid #999999; padding-top: 6px; margin-top: 0; font-size: 10pt; }
+  .brief-voettekst p { margin: 0 0 2px; line-height: 1.35; }
   .brief p { margin: 0 0 2px; line-height: 1.35; }
   .brief .witregel { margin: 0; line-height: 1.35; }
   .brief table td { border: none; padding: 0 6px 0 0; line-height: 1.35; }
@@ -2197,7 +2198,7 @@ function downloadWordDoc({ titel, filename, bodyHtml, footerHtml, margeCm }) {
 </head>
 <body>
 ${bodyMetCid}
-${footerHtml ? `<div class="brief-voettekst">${footerHtml}</div>` : ''}
+${footerHtml ? `<p style="line-height:1.35;">&nbsp;</p><div class="brief-voettekst">${footerHtml}</div>` : ''}
 </body>
 </html>`;
 
@@ -2396,12 +2397,9 @@ function berekenProrataContributie(jaarbedrag, vanafDatumIso) {
 }
 
 function ledenbriefFooterHtml(standaarden) {
-  return `<table style="margin-top:18px;">
-<tr><td style="border:none;width:50%;">Website: <a href="https://${standaarden.verenigingWebsite.replace(/^https?:\/\//, '')}">${escapeHtml(standaarden.verenigingWebsite)}</a></td>
-<td style="border:none;text-align:right;">Adres: ${escapeHtml(standaarden.verenigingAdres)}</td></tr>
-<tr><td style="border:none;">Mail: <a href="mailto:${standaarden.verenigingEmail}">${escapeHtml(standaarden.verenigingEmail)}</a></td>
-<td style="border:none;text-align:right;">Rabobank ${escapeHtml(standaarden.verenigingIban)}</td></tr>
-</table>`;
+  const tabStyle = 'tab-stops:right 552pt;';
+  return `<p style="${tabStyle}">Website: <a href="https://${standaarden.verenigingWebsite.replace(/^https?:\/\//, '')}">${escapeHtml(standaarden.verenigingWebsite)}</a>\tAdres: ${escapeHtml(standaarden.verenigingAdres)}</p>
+<p style="${tabStyle}">Mail: <a href="mailto:${standaarden.verenigingEmail}">${escapeHtml(standaarden.verenigingEmail)}</a>\tRabobank ${escapeHtml(standaarden.verenigingIban)}</p>`;
 }
 
 function welkomstbriefWordHtml(lid, standaarden, afzenderNaam, afzenderFunctie, dagdeelKeuze, ingangsdatum, logoHoogteCm) {
