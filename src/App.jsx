@@ -1148,7 +1148,7 @@ export default function BladelsCreatiefApp() {
           workshops={workshops} inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen}
           readOnly={readOnly('financien')} initialQuery={pendingQuery} onTrash={trashIt} onLog={logAction} />}
         {tab === 'begroting' && <BegrotingTab budget={budget} setBudget={setBudget} tx={tx} boekjaren={boekjaren} setBoekjaren={setBoekjaren} begrotingKoppelingen={begrotingKoppelingen} readOnly={readOnly('begroting')} onLog={logAction} />}
-        {tab === 'rapportage' && <RapportageTab tx={tx} accounts={accounts} members={members} workshops={workshops} inschrijvingen={inschrijvingen} budget={budget} begrotingKoppelingen={begrotingKoppelingen} logoHoogteCm={standaarden.logoHoogteCm} />}
+        {tab === 'rapportage' && <RapportageTab tx={tx} accounts={accounts} members={members} workshops={workshops} inschrijvingen={inschrijvingen} budget={budget} begrotingKoppelingen={begrotingKoppelingen} vergaderingen={vergaderingen} logoHoogteCm={standaarden.logoHoogteCm} />}
         {tab === 'instellingen' && (
           <InstellingenTab isVoorzitter={isVoorzitter} ingelogd={ingelogd} rolpermissies={rolpermissies} setRolpermissies={setRolpermissies}
             beveiliging={beveiliging} setBeveiliging={setBeveiliging} standaarden={standaarden} setStandaarden={setStandaarden}
@@ -4324,12 +4324,14 @@ function rekeningLabel(rekening) {
   return rekening === '908' ? '.908 lopend' : '.319 spaar';
 }
 
-function PeriodeOverzicht({ tx, members, logoHoogteCm }) {
+function PeriodeOverzicht({ tx, members, vergaderingen, logoHoogteCm }) {
   const vandaag = new Date().toISOString().slice(0, 10);
-  const eersteDagJaar = `${new Date().getFullYear()}-01-01`;
-  const [vanaf, setVanaf] = useState(eersteDagJaar);
-  const [tot, setTot] = useState(vandaag);
-  const [rekening, setRekening] = useState('alle');
+  const eindeJaar = `${new Date().getFullYear()}-12-31`;
+  const vorigeVergadering = (vergaderingen || []).filter(v => v.datum && v.datum <= vandaag).sort((a, b) => b.datum.localeCompare(a.datum))[0];
+  const standaardVanaf = vorigeVergadering ? vorigeVergadering.datum : `${new Date().getFullYear()}-01-01`;
+  const [vanaf, setVanaf] = useState(standaardVanaf);
+  const [tot, setTot] = useState(eindeJaar);
+  const [rekening, setRekening] = useState('908');
 
   const { startsaldo, mutaties, eindsaldo, mutatieLijst } = saldoPeriode(tx, rekening, vanaf, tot);
   const nieuweLeden = members.filter(m => m.lidsinds && m.lidsinds >= vanaf && m.lidsinds <= tot)
@@ -4403,6 +4405,9 @@ ${uitschrijvingen.map(m => `<tr><td>${escapeHtml(fullName(m))}</td><td>${fmtDate
           <Btn tone="sage" icon={Download} onClick={exportExcel}>Excel</Btn>
         </div>
       </div>
+      {vorigeVergadering && vanaf === standaardVanaf && (
+        <p className="text-xs" style={{ color: C.inkSoft }}>Startdatum staat standaard op de vorige bestuursvergadering: "{vorigeVergadering.titel}" ({fmtDate(vorigeVergadering.datum)}) — pas gerust aan.</p>
+      )}
 
       <div className="grid sm:grid-cols-3 gap-3">
         <Card className="p-4"><p className="text-xs" style={{ color: C.inkSoft }}>Startsaldo</p><p className="text-xl font-semibold" style={{ fontFamily: 'Fraunces, serif' }}>{euro(startsaldo)}</p></Card>
@@ -4463,7 +4468,7 @@ ${uitschrijvingen.map(m => `<tr><td>${escapeHtml(fullName(m))}</td><td>${fmtDate
 /* =========================================================================
    RAPPORTAGE
 ========================================================================= */
-function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budget, begrotingKoppelingen, logoHoogteCm }) {
+function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budget, begrotingKoppelingen, vergaderingen, logoHoogteCm }) {
   const [weergave, setWeergave] = useState('financieel');
   const years = Array.from(new Set(tx.map(t => t.jaar))).sort((a, b) => b - a);
   const huidigJaar = new Date().getFullYear();
@@ -4549,7 +4554,7 @@ function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budge
           </button>
         ))}
       </div>
-      {weergave === 'periode' && <PeriodeOverzicht tx={tx} members={members} logoHoogteCm={logoHoogteCm} />}
+      {weergave === 'periode' && <PeriodeOverzicht tx={tx} members={members} vergaderingen={vergaderingen} logoHoogteCm={logoHoogteCm} />}
       {weergave === 'financieel' && (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
