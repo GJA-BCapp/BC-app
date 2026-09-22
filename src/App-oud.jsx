@@ -37,23 +37,9 @@ function saldoBoekjaar(tx, rekening, jaar) {
   });
   return { startsaldo, mutaties, eindsaldo: startsaldo + mutaties };
 }
-/* Zelfde soort saldoberekening als saldoBoekjaar, maar dan voor een vrij te kiezen periode
-   (van-tot datum) in plaats van een heel boekjaar — gebruikt door het periode-overzicht in
-   Rapportage. Geeft ook meteen de mutaties binnen die periode als lijst terug. */
-function saldoPeriode(tx, rekening, vanaf, tot) {
-  const rekeningen = rekening === 'alle' ? Object.keys(START_BALANCE) : [rekening];
-  let startsaldo = 0;
-  rekeningen.forEach(r => {
-    startsaldo += (START_BALANCE[r] || 0) + tx.filter(t => t.rekening === r && t.datum < vanaf).reduce((s, t) => s + Number(t.bedrag || 0), 0);
-  });
-  const mutatieLijst = tx.filter(t => rekeningen.includes(t.rekening) && t.datum >= vanaf && t.datum <= tot)
-    .sort((a, b) => a.datum.localeCompare(b.datum));
-  const mutaties = mutatieLijst.reduce((s, t) => s + Number(t.bedrag || 0), 0);
-  return { startsaldo, mutaties, eindsaldo: startsaldo + mutaties, mutatieLijst };
-}
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '22-09-2026';
+const APP_VERSIE = '13-09-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -4319,152 +4305,10 @@ function BegrotingsregelForm({ item, onSave, onClose }) {
   );
 }
 
-function rekeningLabel(rekening) {
-  if (rekening === 'alle') return 'beide rekeningen (.908 + .319)';
-  return rekening === '908' ? '.908 lopend' : '.319 spaar';
-}
-
-function PeriodeOverzicht({ tx, members, logoHoogteCm }) {
-  const vandaag = new Date().toISOString().slice(0, 10);
-  const eersteDagJaar = `${new Date().getFullYear()}-01-01`;
-  const [vanaf, setVanaf] = useState(eersteDagJaar);
-  const [tot, setTot] = useState(vandaag);
-  const [rekening, setRekening] = useState('alle');
-
-  const { startsaldo, mutaties, eindsaldo, mutatieLijst } = saldoPeriode(tx, rekening, vanaf, tot);
-  const nieuweLeden = members.filter(m => m.lidsinds && m.lidsinds >= vanaf && m.lidsinds <= tot)
-    .sort((a, b) => a.lidsinds.localeCompare(b.lidsinds));
-  const uitschrijvingen = members.filter(m => m.eindelidmaat && m.eindelidmaat >= vanaf && m.eindelidmaat <= tot)
-    .sort((a, b) => a.eindelidmaat.localeCompare(b.eindelidmaat));
-  const subtitel = `${fmtDate(vanaf)} t/m ${fmtDate(tot)} · ${rekeningLabel(rekening)}`;
-
-  function exportExcel() {
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['Periode-overzicht'], [subtitel], [],
-      ['Startsaldo', euro(startsaldo)], ['Mutaties', euro(mutaties)], ['Eindsaldo', euro(eindsaldo)], [],
-      ['Datum', 'Rekening', 'Grootboek', 'Omschrijving', 'Bedrag'],
-      ...mutatieLijst.map(t => [fmtDate(t.datum), '.' + t.rekening, gbLabel(t), t.omschrijving, t.bedrag]),
-    ]), 'Mutaties');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['Nieuwe leden', subtitel], [],
-      ['Naam', 'Lid sinds', 'Dagdelen/groep'],
-      ...nieuweLeden.map(m => [fullName(m), fmtDate(m.lidsinds), (m.dagdelen || []).join(', ')]),
-    ]), 'Nieuwe leden');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['Uitschrijvingen', subtitel], [],
-      ['Naam', 'Einddatum lidmaatschap'],
-      ...uitschrijvingen.map(m => [fullName(m), fmtDate(m.eindelidmaat)]),
-    ]), 'Uitschrijvingen');
-    XLSX.writeFile(wb, `BladelsCreatief_Periode-overzicht_${vanaf}_${tot}.xlsx`);
-  }
-
-  function bodyHtml() {
-    return `<h1>Periode-overzicht</h1>
-<p class="meta">${escapeHtml(subtitel)}</p>
-<h2>Financieel</h2>
-<p>Startsaldo: ${euro(startsaldo)} · Mutaties: ${mutaties >= 0 ? '+' : ''}${euro(mutaties)} · Eindsaldo: ${euro(eindsaldo)}</p>
-<table><tr><th>Datum</th><th>Rekening</th><th>Grootboek</th><th>Omschrijving</th><th>Bedrag</th></tr>
-${mutatieLijst.map(t => `<tr><td>${fmtDate(t.datum)}</td><td>.${t.rekening}</td><td>${escapeHtml(gbLabel(t))}</td><td>${escapeHtml(t.omschrijving || '')}</td><td>${euro(t.bedrag)}</td></tr>`).join('') || '<tr><td colspan="5"><em>Geen mutaties in deze periode.</em></td></tr>'}
-</table>
-<h2>Nieuwe leden</h2>
-<table><tr><th>Naam</th><th>Lid sinds</th><th>Dagdelen/groep</th></tr>
-${nieuweLeden.map(m => `<tr><td>${escapeHtml(fullName(m))}</td><td>${fmtDate(m.lidsinds)}</td><td>${escapeHtml((m.dagdelen || []).join(', ') || '—')}</td></tr>`).join('') || '<tr><td colspan="3"><em>Geen nieuwe leden in deze periode.</em></td></tr>'}
-</table>
-<h2>Uitschrijvingen</h2>
-<table><tr><th>Naam</th><th>Einddatum lidmaatschap</th></tr>
-${uitschrijvingen.map(m => `<tr><td>${escapeHtml(fullName(m))}</td><td>${fmtDate(m.eindelidmaat)}</td></tr>`).join('') || '<tr><td colspan="2"><em>Geen uitschrijvingen in deze periode.</em></td></tr>'}
-</table>`;
-  }
-  function exportPdf() {
-    downloadPrintableHtmlVrij({ titel: 'Periode-overzicht', bodyHtml: bodyHtml() });
-  }
-  function exportWord() {
-    downloadWordDoc({ titel: 'Periode-overzicht', filename: `BladelsCreatief_Periode-overzicht_${vanaf}_${tot}.doc`, bodyHtml: `${logoImgTag(logoHoogteCm)}<div class="bar"></div>${bodyHtml()}` });
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Field label="Vanaf"><input type="date" className={inputCls} style={inputStyle} value={vanaf} onChange={e => setVanaf(e.target.value)} /></Field>
-          <Field label="Tot"><input type="date" className={inputCls} style={inputStyle} value={tot} onChange={e => setTot(e.target.value)} /></Field>
-          <Field label="Rekening">
-            <select className={inputCls} style={inputStyle} value={rekening} onChange={e => setRekening(e.target.value)}>
-              <option value="alle">Beide rekeningen</option>
-              <option value="908">.908 lopend</option>
-              <option value="319">.319 spaar</option>
-            </select>
-          </Field>
-        </div>
-        <div className="flex gap-2 flex-wrap self-end">
-          <Btn tone="outline" icon={Printer} onClick={exportPdf}>PDF</Btn>
-          <Btn tone="outline" icon={FileText} onClick={exportWord}>Word</Btn>
-          <Btn tone="sage" icon={Download} onClick={exportExcel}>Excel</Btn>
-        </div>
-      </div>
-
-      <div className="grid sm:grid-cols-3 gap-3">
-        <Card className="p-4"><p className="text-xs" style={{ color: C.inkSoft }}>Startsaldo</p><p className="text-xl font-semibold" style={{ fontFamily: 'Fraunces, serif' }}>{euro(startsaldo)}</p></Card>
-        <Card className="p-4"><p className="text-xs" style={{ color: C.inkSoft }}>Mutaties</p><p className="text-xl font-semibold" style={{ fontFamily: 'Fraunces, serif', color: mutaties >= 0 ? C.sageDeep : C.rose }}>{mutaties >= 0 ? '+' : ''}{euro(mutaties)}</p></Card>
-        <Card className="p-4"><p className="text-xs" style={{ color: C.inkSoft }}>Eindsaldo</p><p className="text-xl font-semibold" style={{ fontFamily: 'Fraunces, serif' }}>{euro(eindsaldo)}</p></Card>
-      </div>
-
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left border-b" style={{ borderColor: C.border }}>
-            {['Datum', 'Rek.', 'Grootboek', 'Omschrijving', 'Bedrag'].map(h => <th key={h} className="px-3 py-2 font-medium text-xs" style={{ color: C.inkSoft }}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {mutatieLijst.map(t => (
-              <tr key={t.id} className="border-b last:border-0" style={{ borderColor: C.border }}>
-                <td className="px-3 py-2" style={{ color: C.inkSoft }}>{fmtDate(t.datum)}</td>
-                <td className="px-3 py-2" style={{ color: C.inkSoft }}>.{t.rekening}</td>
-                <td className="px-3 py-2">{gbLabel(t)}</td>
-                <td className="px-3 py-2">{t.omschrijving}</td>
-                <td className="px-3 py-2 text-right font-medium" style={{ color: t.bedrag >= 0 ? C.sageDeep : C.rose }}>{t.bedrag >= 0 ? '+' : ''}{euro(t.bedrag)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!mutatieLijst.length && <EmptyState icon={Wallet} text="Geen mutaties gevonden in deze periode." />}
-      </Card>
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        <Card className="p-4">
-          <h3 className="font-semibold mb-2" style={{ fontFamily: 'Fraunces, serif', color: C.ink }}>Nieuwe leden ({nieuweLeden.length})</h3>
-          <ul className="text-sm space-y-1.5">
-            {nieuweLeden.map(m => (
-              <li key={m.id} className="flex items-center justify-between">
-                <span>{fullName(m)}</span>
-                <span className="text-xs" style={{ color: C.inkSoft }}>{(m.dagdelen || []).join(', ') || '—'} · {fmtDate(m.lidsinds)}</span>
-              </li>
-            ))}
-            {!nieuweLeden.length && <li className="text-xs italic" style={{ color: C.inkSoft }}>Geen nieuwe leden in deze periode.</li>}
-          </ul>
-        </Card>
-        <Card className="p-4">
-          <h3 className="font-semibold mb-2" style={{ fontFamily: 'Fraunces, serif', color: C.ink }}>Uitschrijvingen ({uitschrijvingen.length})</h3>
-          <ul className="text-sm space-y-1.5">
-            {uitschrijvingen.map(m => (
-              <li key={m.id} className="flex items-center justify-between">
-                <span>{fullName(m)}</span>
-                <span className="text-xs" style={{ color: C.inkSoft }}>{fmtDate(m.eindelidmaat)}</span>
-              </li>
-            ))}
-            {!uitschrijvingen.length && <li className="text-xs italic" style={{ color: C.inkSoft }}>Geen uitschrijvingen in deze periode.</li>}
-          </ul>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
 /* =========================================================================
    RAPPORTAGE
 ========================================================================= */
 function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budget, begrotingKoppelingen, logoHoogteCm }) {
-  const [weergave, setWeergave] = useState('financieel');
   const years = Array.from(new Set(tx.map(t => t.jaar))).sort((a, b) => b - a);
   const huidigJaar = new Date().getFullYear();
   const [jaarNum, setJaarNum] = useState(years.includes(huidigJaar) ? huidigJaar : (years[0] || huidigJaar));
@@ -4541,17 +4385,6 @@ function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budge
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1">
-        {[['financieel', 'Financieel overzicht'], ['periode', 'Periode-overzicht']].map(([id, label]) => (
-          <button key={id} onClick={() => setWeergave(id)} className="px-3 py-1.5 rounded-lg text-sm font-medium border"
-            style={{ background: weergave === id ? C.clay : 'transparent', color: weergave === id ? '#fff' : C.ink, borderColor: weergave === id ? C.clay : C.border }}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {weergave === 'periode' && <PeriodeOverzicht tx={tx} members={members} logoHoogteCm={logoHoogteCm} />}
-      {weergave === 'financieel' && (
-    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <select value={jaarNum} onChange={e => setJaarNum(Number(e.target.value))} className={inputCls} style={inputStyle}>
@@ -4592,8 +4425,6 @@ function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budge
           </ResponsiveContainer>
         </div>
       </Card>
-    </div>
-      )}
     </div>
   );
 }
