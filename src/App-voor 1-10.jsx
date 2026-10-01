@@ -587,7 +587,7 @@ const STORAGE_KEYS = {
   beveiliging: 'bladels:beveiliging', standaarden: 'bladels:standaarden', workshopsortering: 'bladels:workshopsortering',
   tfaSecrets: 'bladels:tfa-secrets', tfaVertrouwd: 'bladels:tfa-vertrouwd', rolpermissies: 'bladels:rolpermissies',
   logboek: 'bladels:logboek', prullenbak: 'bladels:prullenbak', sessies: 'bladels:sessies',
-  overigeActiviteiten: 'bladels:overigeactiviteiten', facturen: 'bladels:facturen',
+  overigeActiviteiten: 'bladels:overigeactiviteiten',
 };
 
 function useStored(key, seed, shared = false, onSaved) {
@@ -1007,7 +1007,6 @@ export default function BladelsCreatiefApp() {
   const [boekjaren, setBoekjaren] = useStored('bladels:boekjaren', SEED_YEARS, true, flash);
   const [vergaderingen, setVergaderingen] = useStored('bladels:vergaderingen', [], true, flash);
   const [overigeActiviteiten, setOverigeActiviteiten] = useStored('bladels:overigeactiviteiten', [], true, flash);
-  const [facturen, setFacturen] = useStored('bladels:facturen', [], true, flash);
   const [actielijst, setActielijst] = useStored('bladels:actielijst', [], true, flash);
   const [contributies, setContributies] = useStored('bladels:contributies', [], true, flash);
   const [pins, setPins] = useStored('bladels:pins', {}, true, flash);
@@ -1147,7 +1146,6 @@ export default function BladelsCreatiefApp() {
         {tab === 'financien' && <FinancienTab tx={tx} setTx={setTx} accounts={accounts} boekjaren={boekjaren} setBoekjaren={setBoekjaren}
           members={members} contributies={contributies} setContributies={setContributies}
           workshops={workshops} inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen}
-          facturen={facturen} setFacturen={setFacturen} standaarden={standaarden} ingelogd={ingelogd}
           readOnly={readOnly('financien')} initialQuery={pendingQuery} onTrash={trashIt} onLog={logAction} />}
         {tab === 'begroting' && <BegrotingTab budget={budget} setBudget={setBudget} tx={tx} boekjaren={boekjaren} setBoekjaren={setBoekjaren} begrotingKoppelingen={begrotingKoppelingen} readOnly={readOnly('begroting')} onLog={logAction} />}
         {tab === 'rapportage' && <RapportageTab tx={tx} accounts={accounts} members={members} workshops={workshops} inschrijvingen={inschrijvingen} budget={budget} begrotingKoppelingen={begrotingKoppelingen} vergaderingen={vergaderingen} logoHoogteCm={standaarden.logoHoogteCm} />}
@@ -1168,10 +1166,9 @@ export default function BladelsCreatiefApp() {
             contributies={contributies} setContributies={setContributies}
             vergaderingen={vergaderingen} setVergaderingen={setVergaderingen}
             overigeActiviteiten={overigeActiviteiten} setOverigeActiviteiten={setOverigeActiviteiten}
-            facturen={facturen} setFacturen={setFacturen}
             magLeden={magBewerken.has('leden')} magWorkshops={magBewerken.has('workshops')} magFinancien={magBewerken.has('financien')} magVergaderingen={magBewerken.has('vergaderingen')}
             magLedenImporteren={magBewerken.has('leden')} magWorkshopsImporteren={magBewerken.has('workshops')} magFinancienImporteren={magBewerken.has('financien')}
-            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen, overigeActiviteiten, facturen }}
+            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen, overigeActiviteiten }}
             onLog={logAction} />
         )}
       </main>
@@ -3776,34 +3773,10 @@ function AgendaVenster({ workshops, vergaderingen, overigeActiviteiten, ingelogd
   );
 }
 
-/* Genereert een gegarandeerd uniek factuurnummer in de vorm JAAR-VOLGNUMMER (bv. 2026-003),
-   door te kijken naar het hoogste al uitgegeven volgnummer in dat jaar. */
-function volgendFactuurnummer(facturen, jaar) {
-  const jaarFacturen = (facturen || []).filter(f => f.nummer && f.nummer.startsWith(`${jaar}-`));
-  const nummers = jaarFacturen.map(f => parseInt(f.nummer.split('-')[1], 10)).filter(n => !isNaN(n));
-  const volgende = (nummers.length ? Math.max(...nummers) : 0) + 1;
-  return `${jaar}-${String(volgende).padStart(3, '0')}`;
-}
-function factuurWordHtml(factuur, standaarden, logoHoogteCm) {
-  const vervaldatum = new Date(factuur.datum);
-  vervaldatum.setDate(vervaldatum.getDate() + 14);
-  const adresRegels = factuur.adres ? `<br/>${escapeHtml(factuur.adres)}<br/>${escapeHtml(factuur.postcode || '')} ${escapeHtml(factuur.woonplaats || '')}` : '';
-  return `${logoImgTag(logoHoogteCm)}<div class="bar"></div>
-<h1>Factuur ${escapeHtml(factuur.nummer)}</h1>
-<p class="meta">Factuurdatum: ${fmtDate(factuur.datum)} · Vervaldatum: ${fmtDate(vervaldatum.toISOString().slice(0, 10))}</p>
-<p><strong>Aan:</strong><br/>${escapeHtml(factuur.naam)}${adresRegels}</p>
-<table><tr><th>Omschrijving</th><th>Bedrag</th></tr>
-<tr><td>${escapeHtml(factuur.omschrijving)}</td><td>${euro(factuur.bedrag)}</td></tr>
-<tr><td style="text-align:right;"><strong>Totaal</strong></td><td><strong>${euro(factuur.bedrag)}</strong></td></tr>
-</table>
-<p>Gelieve het totaalbedrag binnen 14 dagen te voldoen op rekeningnummer <strong>${escapeHtml(standaarden.verenigingIban)}</strong> t.n.v. BladelsCreatief, onder vermelding van factuurnummer <strong>${escapeHtml(factuur.nummer)}</strong>.</p>
-<p>Met vriendelijke groet,<br/>BladelsCreatief</p>`;
-}
-
 /* =========================================================================
    FINANCIËN
 ========================================================================= */
-function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, contributies, setContributies, workshops, inschrijvingen, setInschrijvingen, facturen, setFacturen, standaarden, ingelogd, readOnly, initialQuery, onTrash, onLog }) {
+function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, contributies, setContributies, workshops, inschrijvingen, setInschrijvingen, readOnly, initialQuery, onTrash, onLog }) {
   const years = Array.from(new Set([...boekjaren, ...tx.map(t => t.jaar)])).sort((a, b) => b - a);
   const huidigJaar = new Date().getFullYear();
   const [rekening, setRekening] = useState('908');
@@ -3816,8 +3789,6 @@ function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, c
   const [sortField, setSortField] = useState('datum');
   const [sortDir, setSortDir] = useState('desc');
   const [kolomFilter, setKolomFilter] = useState({ datum: '', grootboek: '', bedrag: '' });
-  const [showFactuur, setShowFactuur] = useState(false);
-  const [showFacturenOverzicht, setShowFacturenOverzicht] = useState(false);
 
   const filtered = tx.filter(t => {
     if (rekening !== 'alle' && t.rekening !== rekening) return false;
@@ -3895,11 +3866,7 @@ function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, c
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="Zoek boeking…" className={`${inputCls} pl-8`} style={{ ...inputStyle, width: 190 }} />
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {facturen.length > 0 && <button onClick={() => setShowFacturenOverzicht(true)} className="text-xs underline" style={{ color: C.inkSoft }}>Eerder aangemaakte facturen ({facturen.length})</button>}
-          {!readOnly && <Btn tone="outline" icon={FileText} onClick={() => setShowFactuur(true)}>Factuur aanmaken</Btn>}
-          {!readOnly && <Btn icon={Plus} onClick={() => { setEditing(null); setShowForm(true); }}>Nieuwe boeking</Btn>}
-        </div>
+        {!readOnly && <Btn icon={Plus} onClick={() => { setEditing(null); setShowForm(true); }}>Nieuwe boeking</Btn>}
       </div>
 
       {saldo && (
@@ -3971,13 +3938,6 @@ function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, c
       {showForm && <TxForm item={editing} accounts={accounts} members={members} contributies={contributies} workshops={workshops} inschrijvingen={inschrijvingen} onSave={save} onClose={() => { setShowForm(false); setEditing(null); }} />}
       {delId != null && (
         <ConfirmModal message={tx.find(t => t.id === delId)?.gekoppeldType ? 'Deze boeking verwijderen? Dit zet de gekoppelde contributie/inschrijving ook weer terug naar open.' : 'Deze boeking verwijderen?'} onConfirm={() => { remove(delId); setDelId(null); }} onCancel={() => setDelId(null)} />
-      )}
-      {showFactuur && (
-        <FactuurModal members={members} workshops={workshops} inschrijvingen={inschrijvingen} facturen={facturen} setFacturen={setFacturen} standaarden={standaarden} ingelogd={ingelogd}
-          onClose={() => setShowFactuur(false)} onLog={onLog} />
-      )}
-      {showFacturenOverzicht && (
-        <FacturenOverzichtModal facturen={facturen} standaarden={standaarden} onClose={() => setShowFacturenOverzicht(false)} />
       )}
     </div>
   );
@@ -4105,172 +4065,6 @@ function TxForm({ item, accounts, members, contributies, workshops, inschrijving
         <Btn tone="ghost" onClick={onClose}>Annuleren</Btn>
         <Btn onClick={() => onSave(f)} disabled={!f.grootboek_code || !f.bedrag}>Opslaan</Btn>
       </div>
-    </Modal>
-  );
-}
-
-function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacturen, standaarden, ingelogd, onClose, onLog }) {
-  const [bron, setBron] = useState('lid');
-  const [lidId, setLidId] = useState('');
-  const [workshopId, setWorkshopId] = useState('');
-  const [inschrijvingId, setInschrijvingId] = useState('');
-  const [omschrijving, setOmschrijving] = useState('');
-  const [bedrag, setBedrag] = useState('');
-  const [datum, setDatum] = useState(new Date().toISOString().slice(0, 10));
-  const jaar = new Date(datum).getFullYear();
-
-  const lid = members.find(m => String(m.id) === String(lidId));
-  const gekozenWorkshop = workshops.find(w => String(w.id) === String(workshopId));
-  const workshopInschrijvingen = inschrijvingen.filter(i => String(i.workshopId) === String(workshopId));
-  const inschrijving = workshopInschrijvingen.find(i => String(i.id) === String(inschrijvingId));
-
-  const ontvanger = bron === 'lid'
-    ? (lid ? { naam: fullName(lid), adres: lid.adres, postcode: lid.postcode, woonplaats: lid.woonplaats, lidId: lid.id } : null)
-    : (inschrijving ? { naam: inschrijving.naam, adres: '', postcode: '', woonplaats: '', lidId: inschrijving.lidId || null } : null);
-
-  function wisselBron(nieuweBron) {
-    setBron(nieuweBron);
-    setLidId(''); setWorkshopId(''); setInschrijvingId(''); setOmschrijving(''); setBedrag('');
-  }
-  function vulContributieIn() {
-    if (!lid) return;
-    setOmschrijving(`Contributie ${jaar} — ${fullName(lid)}`);
-    setBedrag(String(standaarden.jaarcontributie));
-  }
-  function vulWorkshopInVoorLid(wId) {
-    setWorkshopId(wId);
-    const w = workshops.find(x => String(x.id) === wId);
-    if (!w || !lid) return;
-    setOmschrijving(`${w.titel} — ${fullName(lid)}`);
-    setBedrag(w.bedrag != null ? String(w.bedrag) : '');
-  }
-  function vulWorkshopbedragIn() {
-    if (!gekozenWorkshop || !ontvanger) return;
-    setOmschrijving(`${gekozenWorkshop.titel} — ${ontvanger.naam}`);
-    setBedrag(gekozenWorkshop.bedrag != null ? String(gekozenWorkshop.bedrag) : '');
-  }
-
-  function maakFactuur() {
-    const nummer = volgendFactuurnummer(facturen, jaar);
-    const nieuw = {
-      id: uid(facturen), nummer, datum,
-      naam: ontvanger.naam, adres: ontvanger.adres || '', postcode: ontvanger.postcode || '', woonplaats: ontvanger.woonplaats || '',
-      lidId: ontvanger.lidId || null, omschrijving, bedrag: Number(bedrag), gemaaktDoor: ingelogd ? fullName(ingelogd) : '',
-    };
-    setFacturen([...facturen, nieuw]);
-    onLog(`Factuur aangemaakt: ${nummer} — ${ontvanger.naam} (${euro(nieuw.bedrag)})`, 'financien');
-    downloadWordDoc({ titel: `Factuur ${nummer}`, filename: `BladelsCreatief_Factuur_${nummer}.doc`, bodyHtml: factuurWordHtml(nieuw, standaarden, standaarden.logoHoogteCm) });
-    onClose();
-  }
-
-  return (
-    <Modal title="Factuur aanmaken" onClose={onClose}>
-      <div className="space-y-3">
-        <div className="flex gap-1">
-          {[['lid', 'Lid'], ['workshop', 'Workshopdeelnemer (ook extern)']].map(([id, label]) => (
-            <button key={id} onClick={() => wisselBron(id)} className="px-3 py-1.5 rounded-lg text-sm font-medium border"
-              style={{ background: bron === id ? C.clay : 'transparent', color: bron === id ? '#fff' : C.ink, borderColor: bron === id ? C.clay : C.border }}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {bron === 'lid' && (
-          <>
-            <Field label="Lid">
-              <select className={inputCls} style={inputStyle} value={lidId} onChange={e => { setLidId(e.target.value); setOmschrijving(''); setBedrag(''); }}>
-                <option value="">— kies lid —</option>
-                {members.slice().sort((a, b) => fullName(a).localeCompare(fullName(b))).map(m => <option key={m.id} value={m.id}>{fullName(m)}</option>)}
-              </select>
-            </Field>
-            {lid && (
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={vulContributieIn} className="text-xs underline" style={{ color: C.clay }}>Vul contributie {jaar} in ({euro(standaarden.jaarcontributie)})</button>
-                {workshops.filter(w => w.status !== 'afgerond').length > 0 && (
-                  <select onChange={e => e.target.value && vulWorkshopInVoorLid(e.target.value)} defaultValue="" className="text-xs rounded border px-1.5 py-0.5" style={inputStyle}>
-                    <option value="">of vul workshop in…</option>
-                    {workshops.filter(w => w.status !== 'afgerond').map(w => <option key={w.id} value={w.id}>{w.titel}</option>)}
-                  </select>
-                )}
-              </div>
-            )}
-          </>
-        )}
-
-        {bron === 'workshop' && (
-          <>
-            <Field label="Workshop">
-              <select className={inputCls} style={inputStyle} value={workshopId} onChange={e => { setWorkshopId(e.target.value); setInschrijvingId(''); setOmschrijving(''); setBedrag(''); }}>
-                <option value="">— kies workshop —</option>
-                {workshops.slice().sort((a, b) => a.titel.localeCompare(b.titel)).map(w => <option key={w.id} value={w.id}>{w.titel}</option>)}
-              </select>
-            </Field>
-            {workshopId && (
-              <Field label="Deelnemer">
-                <select className={inputCls} style={inputStyle} value={inschrijvingId} onChange={e => { setInschrijvingId(e.target.value); setOmschrijving(''); setBedrag(''); }}>
-                  <option value="">— kies deelnemer —</option>
-                  {workshopInschrijvingen.slice().sort((a, b) => (a.naam || '').localeCompare(b.naam || '')).map(i => (
-                    <option key={i.id} value={i.id}>{i.naam}{i.herkomst === 'extern' ? ' (extern)' : ''}</option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {inschrijving && (
-              <button type="button" onClick={vulWorkshopbedragIn} className="text-xs underline" style={{ color: C.clay }}>
-                Vul omschrijving &amp; bedrag in{gekozenWorkshop && gekozenWorkshop.bedrag != null ? ` (${euro(gekozenWorkshop.bedrag)})` : ''}
-              </button>
-            )}
-            {inschrijving && inschrijving.herkomst === 'extern' && (
-              <p className="text-xs" style={{ color: C.inkSoft }}>Extern deelnemer — er is geen adres bekend; de factuur toont daarom alleen de naam.</p>
-            )}
-          </>
-        )}
-
-        <Field label="Omschrijving"><input className={inputCls} style={inputStyle} value={omschrijving} onChange={e => setOmschrijving(e.target.value)} /></Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Bedrag"><input type="number" step="0.01" className={inputCls} style={inputStyle} value={bedrag} onChange={e => setBedrag(e.target.value)} /></Field>
-          <Field label="Factuurdatum"><input type="date" className={inputCls} style={inputStyle} value={datum} onChange={e => setDatum(e.target.value)} /></Field>
-        </div>
-        <p className="text-xs rounded-lg px-3 py-2" style={{ background: C.paperDim, color: C.inkSoft }}>
-          Factuurnummer <strong>{volgendFactuurnummer(facturen, jaar)}</strong> wordt automatisch toegekend en is gegarandeerd uniek — deze actie boekt niets automatisch in Financiën; markeer de betaling later zelf als die binnenkomt.
-        </p>
-      </div>
-      <div className="flex justify-end gap-2 mt-5">
-        <Btn tone="ghost" onClick={onClose}>Annuleren</Btn>
-        <Btn tone="sage" icon={FileText} onClick={maakFactuur} disabled={!ontvanger || !omschrijving || !bedrag}>Factuur aanmaken &amp; downloaden</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-function FacturenOverzichtModal({ facturen, standaarden, onClose }) {
-  const gesorteerd = [...facturen].sort((a, b) => b.nummer.localeCompare(a.nummer));
-  function opnieuwDownloaden(f) {
-    downloadWordDoc({ titel: `Factuur ${f.nummer}`, filename: `BladelsCreatief_Factuur_${f.nummer}.doc`, bodyHtml: factuurWordHtml(f, standaarden, standaarden.logoHoogteCm) });
-  }
-  return (
-    <Modal title="Eerder aangemaakte facturen" onClose={onClose} wide>
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left border-b" style={{ borderColor: C.border }}>
-            {['Nummer', 'Datum', 'Naam', 'Omschrijving', 'Bedrag', ''].map(h => <th key={h} className="px-3 py-2 font-medium text-xs" style={{ color: C.inkSoft }}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {gesorteerd.map(f => (
-              <tr key={f.id} className="border-b last:border-0" style={{ borderColor: C.border }}>
-                <td className="px-3 py-2">{f.nummer}</td>
-                <td className="px-3 py-2" style={{ color: C.inkSoft }}>{fmtDate(f.datum)}</td>
-                <td className="px-3 py-2">{f.naam}</td>
-                <td className="px-3 py-2" style={{ color: C.inkSoft }}>{f.omschrijving}</td>
-                <td className="px-3 py-2">{euro(f.bedrag)}</td>
-                <td className="px-3 py-2"><button onClick={() => opnieuwDownloaden(f)} className="text-xs underline" style={{ color: C.clay }}>opnieuw downloaden</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!gesorteerd.length && <EmptyState icon={FileText} text="Nog geen facturen aangemaakt." />}
-      </Card>
-      <div className="flex justify-end mt-5"><Btn tone="ghost" onClick={onClose}>Sluiten</Btn></div>
     </Modal>
   );
 }
@@ -4812,7 +4606,7 @@ function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budge
 /* =========================================================================
    INSTELLINGEN
 ========================================================================= */
-function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissies, beveiliging, setBeveiliging, standaarden, setStandaarden, watIsNieuw, setWatIsNieuw, facturen, setFacturen, logboek, prullenbak, setPrullenbak,
+function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissies, beveiliging, setBeveiliging, standaarden, setStandaarden, watIsNieuw, setWatIsNieuw, logboek, prullenbak, setPrullenbak,
   members, setMembers, workshops, setWorkshops, inschrijvingen, setInschrijvingen, tx, setTx, boekjaren, setBoekjaren, accounts, setAccounts,
   begrotingKoppelingen, setBegrotingKoppelingen,
   dagdelen, setDagdelen,
@@ -4905,7 +4699,6 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     if (herstelData.rolpermissies) setRolpermissies(herstelData.rolpermissies);
     if (herstelData.begrotingKoppelingen) setBegrotingKoppelingen(herstelData.begrotingKoppelingen);
     if (herstelData.overigeActiviteiten) setOverigeActiviteiten(herstelData.overigeActiviteiten);
-    if (herstelData.facturen) setFacturen(herstelData.facturen);
     setHerstelResultaat(true);
     setToonBevestiging(false);
     onLog('Back-up hersteld', 'instellingen');
@@ -4974,10 +4767,6 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
         const lid = m.find(y => y.id === x.lidId);
         return [lid ? fullName(lid) : x.lidId, x.jaar, x.bedrag, x.betaald ? 'ja' : 'nee', x.datum];
       }),
-    ]);
-    voegToe('Facturen', [
-      ['Nummer', 'Datum', 'Lid', 'Omschrijving', 'Bedrag', 'Gemaakt door'],
-      ...(backupData.facturen || []).map(x => [x.nummer, x.datum, x.naam, x.omschrijving, x.bedrag, x.gemaaktDoor]),
     ]);
     XLSX.writeFile(wb, `BladelsCreatief_Backup_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
