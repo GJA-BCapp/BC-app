@@ -590,7 +590,7 @@ const STORAGE_KEYS = {
   beveiliging: 'bladels:beveiliging', standaarden: 'bladels:standaarden', workshopsortering: 'bladels:workshopsortering',
   tfaSecrets: 'bladels:tfa-secrets', tfaVertrouwd: 'bladels:tfa-vertrouwd', rolpermissies: 'bladels:rolpermissies',
   logboek: 'bladels:logboek', prullenbak: 'bladels:prullenbak', sessies: 'bladels:sessies',
-  overigeActiviteiten: 'bladels:overigeactiviteiten', facturen: 'bladels:facturen',
+  overigeActiviteiten: 'bladels:overigeactiviteiten', facturen: 'bladels:facturen', factuurteller: 'bladels:factuurteller',
 };
 
 function useStored(key, seed, shared = false, onSaved) {
@@ -1011,6 +1011,7 @@ export default function BladelsCreatiefApp() {
   const [vergaderingen, setVergaderingen] = useStored('bladels:vergaderingen', [], true, flash);
   const [overigeActiviteiten, setOverigeActiviteiten] = useStored('bladels:overigeactiviteiten', [], true, flash);
   const [facturen, setFacturen] = useStored('bladels:facturen', [], true, flash);
+  const [factuurteller, setFactuurteller] = useStored('bladels:factuurteller', {}, true, flash);
   const [actielijst, setActielijst] = useStored('bladels:actielijst', [], true, flash);
   const [contributies, setContributies] = useStored('bladels:contributies', [], true, flash);
   const [pins, setPins] = useStored('bladels:pins', {}, true, flash);
@@ -1151,7 +1152,8 @@ export default function BladelsCreatiefApp() {
         {tab === 'financien' && <FinancienTab tx={tx} setTx={setTx} accounts={accounts} boekjaren={boekjaren} setBoekjaren={setBoekjaren}
           members={members} contributies={contributies} setContributies={setContributies}
           workshops={workshops} inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen}
-          facturen={facturen} setFacturen={setFacturen} standaarden={standaarden} ingelogd={ingelogd} magFactureren={magFactureren}
+          facturen={facturen} setFacturen={setFacturen} factuurteller={factuurteller} setFactuurteller={setFactuurteller}
+          standaarden={standaarden} ingelogd={ingelogd} magFactureren={magFactureren}
           readOnly={readOnly('financien')} initialQuery={pendingQuery} onTrash={trashIt} onLog={logAction} />}
         {tab === 'begroting' && <BegrotingTab budget={budget} setBudget={setBudget} tx={tx} boekjaren={boekjaren} setBoekjaren={setBoekjaren} begrotingKoppelingen={begrotingKoppelingen} readOnly={readOnly('begroting')} onLog={logAction} />}
         {tab === 'rapportage' && <RapportageTab tx={tx} accounts={accounts} members={members} workshops={workshops} inschrijvingen={inschrijvingen} budget={budget} begrotingKoppelingen={begrotingKoppelingen} vergaderingen={vergaderingen} logoHoogteCm={standaarden.logoHoogteCm} />}
@@ -1172,10 +1174,10 @@ export default function BladelsCreatiefApp() {
             contributies={contributies} setContributies={setContributies}
             vergaderingen={vergaderingen} setVergaderingen={setVergaderingen}
             overigeActiviteiten={overigeActiviteiten} setOverigeActiviteiten={setOverigeActiviteiten}
-            facturen={facturen} setFacturen={setFacturen}
+            facturen={facturen} setFacturen={setFacturen} factuurteller={factuurteller} setFactuurteller={setFactuurteller}
             magLeden={magBewerken.has('leden')} magWorkshops={magBewerken.has('workshops')} magFinancien={magBewerken.has('financien')} magVergaderingen={magBewerken.has('vergaderingen')}
             magLedenImporteren={magBewerken.has('leden')} magWorkshopsImporteren={magBewerken.has('workshops')} magFinancienImporteren={magBewerken.has('financien')}
-            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen, overigeActiviteiten, facturen }}
+            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen, overigeActiviteiten, facturen, factuurteller }}
             onLog={logAction} />
         )}
       </main>
@@ -3782,11 +3784,12 @@ function AgendaVenster({ workshops, vergaderingen, overigeActiviteiten, ingelogd
 
 /* Genereert een gegarandeerd uniek factuurnummer in de vorm JAAR-VOLGNUMMER (bv. 2026-003),
    door te kijken naar het hoogste al uitgegeven volgnummer in dat jaar. */
-function volgendFactuurnummer(facturen, jaar) {
-  const jaarFacturen = (facturen || []).filter(f => f.nummer && f.nummer.startsWith(`${jaar}-`));
-  const nummers = jaarFacturen.map(f => parseInt(f.nummer.split('-')[1], 10)).filter(n => !isNaN(n));
-  const volgende = (nummers.length ? Math.max(...nummers) : 0) + 1;
-  return `${jaar}-${String(volgende).padStart(3, '0')}`;
+/* Berekent het eerstvolgende factuurnummer op basis van een losse, nooit-teruglopende teller
+   per jaar (factuurteller) — bewust NIET afgeleid van de huidige facturenlijst, want anders
+   zou het verwijderen van de laatst uitgegeven factuur dat nummer weer vrijgeven voor hergebruik. */
+function volgendFactuurnummer(factuurteller, jaar) {
+  const volgende = (factuurteller[jaar] || 0) + 1;
+  return { nummer: `${jaar}-${String(volgende).padStart(3, '0')}`, volgende };
 }
 function factuurWordHtml(factuur, standaarden, logoHoogteCm) {
   const vervaldatum = new Date(factuur.datum);
@@ -3816,7 +3819,7 @@ ${wr}
 /* =========================================================================
    FINANCIËN
 ========================================================================= */
-function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, contributies, setContributies, workshops, inschrijvingen, setInschrijvingen, facturen, setFacturen, standaarden, ingelogd, magFactureren, readOnly, initialQuery, onTrash, onLog }) {
+function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, contributies, setContributies, workshops, inschrijvingen, setInschrijvingen, facturen, setFacturen, factuurteller, setFactuurteller, standaarden, ingelogd, magFactureren, readOnly, initialQuery, onTrash, onLog }) {
   const years = Array.from(new Set([...boekjaren, ...tx.map(t => t.jaar)])).sort((a, b) => b - a);
   const huidigJaar = new Date().getFullYear();
   const [rekening, setRekening] = useState('908');
@@ -3986,11 +3989,13 @@ function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, c
         <ConfirmModal message={tx.find(t => t.id === delId)?.gekoppeldType ? 'Deze boeking verwijderen? Dit zet de gekoppelde contributie/inschrijving ook weer terug naar open.' : 'Deze boeking verwijderen?'} onConfirm={() => { remove(delId); setDelId(null); }} onCancel={() => setDelId(null)} />
       )}
       {showFactuur && (
-        <FactuurModal members={members} workshops={workshops} inschrijvingen={inschrijvingen} facturen={facturen} setFacturen={setFacturen} standaarden={standaarden} ingelogd={ingelogd}
+        <FactuurModal members={members} workshops={workshops} inschrijvingen={inschrijvingen} facturen={facturen} setFacturen={setFacturen}
+          factuurteller={factuurteller} setFactuurteller={setFactuurteller} standaarden={standaarden} ingelogd={ingelogd}
           onClose={() => setShowFactuur(false)} onLog={onLog} />
       )}
       {showFacturenOverzicht && (
-        <FacturenOverzichtModal facturen={facturen} standaarden={standaarden} onClose={() => setShowFacturenOverzicht(false)} />
+        <FacturenOverzichtModal facturen={facturen} setFacturen={setFacturen} standaarden={standaarden} magFactureren={magFactureren}
+          onClose={() => setShowFacturenOverzicht(false)} onTrash={onTrash} onLog={onLog} />
       )}
     </div>
   );
@@ -4122,7 +4127,7 @@ function TxForm({ item, accounts, members, contributies, workshops, inschrijving
   );
 }
 
-function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacturen, standaarden, ingelogd, onClose, onLog }) {
+function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacturen, factuurteller, setFactuurteller, standaarden, ingelogd, onClose, onLog }) {
   const [bron, setBron] = useState('lid');
   const [lidId, setLidId] = useState('');
   const [workshopId, setWorkshopId] = useState('');
@@ -4183,7 +4188,7 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
   }
 
   function maakFactuur() {
-    const nummer = volgendFactuurnummer(facturen, jaar);
+    const { nummer, volgende } = volgendFactuurnummer(factuurteller, jaar);
     const nieuw = {
       id: uid(facturen), nummer, datum,
       naam: ontvanger.naam, adres: ontvanger.adres || '', postcode: ontvanger.postcode || '', woonplaats: ontvanger.woonplaats || '',
@@ -4191,6 +4196,7 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
       gemaaktDoor: ingelogd ? fullName(ingelogd) : '', gemaaktDoorFunctie: ingelogd ? (ingelogd.functie || '') : '',
     };
     setFacturen([...facturen, nieuw]);
+    setFactuurteller({ ...factuurteller, [jaar]: volgende });
     onLog(`Factuur aangemaakt: ${nummer} — ${ontvanger.naam} (${euro(nieuw.bedrag)})`, 'financien');
     downloadWordDoc({ titel: `Factuur ${nummer}`, filename: `BladelsCreatief_Factuur_${nummer}.doc`, bodyHtml: factuurWordHtml(nieuw, standaarden, standaarden.logoHoogteCm) });
     onClose();
@@ -4282,7 +4288,7 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
           <Field label="Factuurdatum"><input type="date" className={inputCls} style={inputStyle} value={datum} onChange={e => setDatum(e.target.value)} /></Field>
         </div>
         <p className="text-xs rounded-lg px-3 py-2" style={{ background: C.paperDim, color: C.inkSoft }}>
-          Factuurnummer <strong>{volgendFactuurnummer(facturen, jaar)}</strong> wordt automatisch toegekend en is gegarandeerd uniek — deze actie boekt niets automatisch in Financiën; markeer de betaling later zelf als die binnenkomt.
+          Factuurnummer <strong>{volgendFactuurnummer(factuurteller, jaar).nummer}</strong> wordt automatisch toegekend en is gegarandeerd uniek (ook na eventueel verwijderen) — deze actie boekt niets automatisch in Financiën; markeer de betaling later zelf als die binnenkomt.
         </p>
       </div>
       <div className="flex justify-end gap-2 mt-5">
@@ -4293,10 +4299,16 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
   );
 }
 
-function FacturenOverzichtModal({ facturen, standaarden, onClose }) {
+function FacturenOverzichtModal({ facturen, setFacturen, standaarden, magFactureren, onClose, onTrash, onLog }) {
+  const [delId, setDelId] = useState(null);
   const gesorteerd = [...facturen].sort((a, b) => b.nummer.localeCompare(a.nummer));
   function opnieuwDownloaden(f) {
     downloadWordDoc({ titel: `Factuur ${f.nummer}`, filename: `BladelsCreatief_Factuur_${f.nummer}.doc`, bodyHtml: factuurWordHtml(f, standaarden, standaarden.logoHoogteCm) });
+  }
+  function verwijderen(id) {
+    const f = facturen.find(x => x.id === id);
+    setFacturen(facturen.filter(x => x.id !== id));
+    if (f) { onTrash('factuur', f); onLog(`Factuur verwijderd: ${f.nummer} — ${f.naam}`, 'financien'); }
   }
   return (
     <Modal title="Eerder aangemaakte facturen" onClose={onClose} wide>
@@ -4313,7 +4325,12 @@ function FacturenOverzichtModal({ facturen, standaarden, onClose }) {
                 <td className="px-3 py-2">{f.naam}</td>
                 <td className="px-3 py-2" style={{ color: C.inkSoft }}>{f.omschrijving}</td>
                 <td className="px-3 py-2">{euro(f.bedrag)}</td>
-                <td className="px-3 py-2"><button onClick={() => opnieuwDownloaden(f)} className="text-xs underline" style={{ color: C.clay }}>opnieuw downloaden</button></td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2 justify-end">
+                    <button onClick={() => opnieuwDownloaden(f)} className="text-xs underline" style={{ color: C.clay }}>opnieuw downloaden</button>
+                    {magFactureren && <button onClick={() => setDelId(f.id)} className="p-1 rounded hover:bg-black/5" style={{ color: C.rose }}><Trash2 size={13} /></button>}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -4321,6 +4338,9 @@ function FacturenOverzichtModal({ facturen, standaarden, onClose }) {
         {!gesorteerd.length && <EmptyState icon={FileText} text="Nog geen facturen aangemaakt." />}
       </Card>
       <div className="flex justify-end mt-5"><Btn tone="ghost" onClick={onClose}>Sluiten</Btn></div>
+      {delId != null && (
+        <ConfirmModal message="Deze factuur verwijderen? Het factuurnummer wordt niet opnieuw uitgegeven, en het bestand is terug te vinden in de prullenbak (Instellingen)." onConfirm={() => { verwijderen(delId); setDelId(null); }} onCancel={() => setDelId(null)} />
+      )}
     </Modal>
   );
 }
@@ -4862,7 +4882,7 @@ function RapportageTab({ tx, accounts, members, workshops, inschrijvingen, budge
 /* =========================================================================
    INSTELLINGEN
 ========================================================================= */
-function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissies, beveiliging, setBeveiliging, standaarden, setStandaarden, watIsNieuw, setWatIsNieuw, facturen, setFacturen, logboek, prullenbak, setPrullenbak,
+function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissies, beveiliging, setBeveiliging, standaarden, setStandaarden, watIsNieuw, setWatIsNieuw, facturen, setFacturen, factuurteller, setFactuurteller, logboek, prullenbak, setPrullenbak,
   members, setMembers, workshops, setWorkshops, inschrijvingen, setInschrijvingen, tx, setTx, boekjaren, setBoekjaren, accounts, setAccounts,
   begrotingKoppelingen, setBegrotingKoppelingen,
   dagdelen, setDagdelen,
@@ -4896,6 +4916,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     if (entry.type === 'boeking') setTx(t => [...t, entry.data]);
     if (entry.type === 'vergadering') setVergaderingen(v => [...v, entry.data]);
     if (entry.type === 'activiteit') setOverigeActiviteiten(a => [...a, entry.data]);
+    if (entry.type === 'factuur') setFacturen(f => [...f, entry.data]);
     setPrullenbak(prullenbak.filter(x => x.id !== entry.id));
     onLog(`Hersteld uit prullenbak: ${entry.type}`, 'instellingen');
   }
@@ -4956,6 +4977,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     if (herstelData.begrotingKoppelingen) setBegrotingKoppelingen(herstelData.begrotingKoppelingen);
     if (herstelData.overigeActiviteiten) setOverigeActiviteiten(herstelData.overigeActiviteiten);
     if (herstelData.facturen) setFacturen(herstelData.facturen);
+    if (herstelData.factuurteller) setFactuurteller(herstelData.factuurteller);
     setHerstelResultaat(true);
     setToonBevestiging(false);
     onLog('Back-up hersteld', 'instellingen');
