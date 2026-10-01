@@ -67,11 +67,14 @@ const EDITEERBARE_TABS = [
   { id: 'begroting', label: 'Begroting' }, { id: 'kalender', label: 'Kalender' },
 ];
 const SEED_ROLPERMISSIES = [
-  { id: 1, patroon: 'voorzitter', tabs: ['leden', 'workshops', 'vergaderingen', 'financien', 'begroting', 'kalender'] },
-  { id: 2, patroon: 'penningmeester', tabs: ['financien', 'begroting'] },
+  { id: 1, patroon: 'voorzitter', tabs: ['leden', 'workshops', 'vergaderingen', 'financien', 'begroting', 'kalender', 'facturen'] },
+  { id: 2, patroon: 'penningmeester', tabs: ['financien', 'begroting', 'facturen'] },
   { id: 3, patroon: 'secretaris', tabs: ['vergaderingen', 'leden'] },
   { id: 4, patroon: 'ledenadministratie', tabs: ['leden', 'workshops'] },
 ];
+/* 'facturen' is een los, extra aan te vinken recht (geen echt tabblad) binnen Rolbeheer —
+   bepaalt wie de knop "Factuur aanmaken" in Financiën te zien krijgt. */
+const EXTRA_RECHTEN = [{ id: 'facturen', label: 'Facturen aanmaken' }];
 function bewerkbareTabs(functie, regels) {
   if (!functie) return [];
   const regel = regels.find(r => functie.toLowerCase().includes(r.patroon.toLowerCase()));
@@ -1086,6 +1089,7 @@ export default function BladelsCreatiefApp() {
   const magBewerken = new Set(bewerkbareTabs(ingelogd.functie, rolpermissies));
   const readOnly = tabId => !magBewerken.has(tabId);
   const isVoorzitter = /voorzitter/i.test(ingelogd.functie || '');
+  const magFactureren = magBewerken.has('facturen');
 
   function goTo(tabId, query) {
     setPendingQuery(query || '');
@@ -1147,7 +1151,7 @@ export default function BladelsCreatiefApp() {
         {tab === 'financien' && <FinancienTab tx={tx} setTx={setTx} accounts={accounts} boekjaren={boekjaren} setBoekjaren={setBoekjaren}
           members={members} contributies={contributies} setContributies={setContributies}
           workshops={workshops} inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen}
-          facturen={facturen} setFacturen={setFacturen} standaarden={standaarden} ingelogd={ingelogd}
+          facturen={facturen} setFacturen={setFacturen} standaarden={standaarden} ingelogd={ingelogd} magFactureren={magFactureren}
           readOnly={readOnly('financien')} initialQuery={pendingQuery} onTrash={trashIt} onLog={logAction} />}
         {tab === 'begroting' && <BegrotingTab budget={budget} setBudget={setBudget} tx={tx} boekjaren={boekjaren} setBoekjaren={setBoekjaren} begrotingKoppelingen={begrotingKoppelingen} readOnly={readOnly('begroting')} onLog={logAction} />}
         {tab === 'rapportage' && <RapportageTab tx={tx} accounts={accounts} members={members} workshops={workshops} inschrijvingen={inschrijvingen} budget={budget} begrotingKoppelingen={begrotingKoppelingen} vergaderingen={vergaderingen} logoHoogteCm={standaarden.logoHoogteCm} />}
@@ -3788,22 +3792,31 @@ function factuurWordHtml(factuur, standaarden, logoHoogteCm) {
   const vervaldatum = new Date(factuur.datum);
   vervaldatum.setDate(vervaldatum.getDate() + 14);
   const adresRegels = factuur.adres ? `<br/>${escapeHtml(factuur.adres)}<br/>${escapeHtml(factuur.postcode || '')} ${escapeHtml(factuur.woonplaats || '')}` : '';
+  const wr = '<p>&nbsp;</p>';
+  const ondertekening = factuur.gemaaktDoorFunctie
+    ? `${escapeHtml(factuur.gemaaktDoor || '')}<br/>${escapeHtml(factuur.gemaaktDoorFunctie)} BladelsCreatief`
+    : escapeHtml(factuur.gemaaktDoor || 'BladelsCreatief');
   return `${logoImgTag(logoHoogteCm)}<div class="bar"></div>
 <h1>Factuur ${escapeHtml(factuur.nummer)}</h1>
 <p class="meta">Factuurdatum: ${fmtDate(factuur.datum)} · Vervaldatum: ${fmtDate(vervaldatum.toISOString().slice(0, 10))}</p>
+${wr}${wr}
 <p><strong>Aan:</strong><br/>${escapeHtml(factuur.naam)}${adresRegels}</p>
 <table><tr><th>Omschrijving</th><th>Bedrag</th></tr>
 <tr><td>${escapeHtml(factuur.omschrijving)}</td><td>${euro(factuur.bedrag)}</td></tr>
 <tr><td style="text-align:right;"><strong>Totaal</strong></td><td><strong>${euro(factuur.bedrag)}</strong></td></tr>
 </table>
+${wr}
 <p>Gelieve het totaalbedrag binnen 14 dagen te voldoen op rekeningnummer <strong>${escapeHtml(standaarden.verenigingIban)}</strong> t.n.v. BladelsCreatief, onder vermelding van factuurnummer <strong>${escapeHtml(factuur.nummer)}</strong>.</p>
-<p>Met vriendelijke groet,<br/>BladelsCreatief</p>`;
+${wr}
+<p>Met vriendelijke groet,</p>
+${wr}
+<p>${ondertekening}</p>`;
 }
 
 /* =========================================================================
    FINANCIËN
 ========================================================================= */
-function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, contributies, setContributies, workshops, inschrijvingen, setInschrijvingen, facturen, setFacturen, standaarden, ingelogd, readOnly, initialQuery, onTrash, onLog }) {
+function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, contributies, setContributies, workshops, inschrijvingen, setInschrijvingen, facturen, setFacturen, standaarden, ingelogd, magFactureren, readOnly, initialQuery, onTrash, onLog }) {
   const years = Array.from(new Set([...boekjaren, ...tx.map(t => t.jaar)])).sort((a, b) => b - a);
   const huidigJaar = new Date().getFullYear();
   const [rekening, setRekening] = useState('908');
@@ -3897,7 +3910,7 @@ function FinancienTab({ tx, setTx, accounts, boekjaren, setBoekjaren, members, c
         </div>
         <div className="flex items-center gap-2">
           {facturen.length > 0 && <button onClick={() => setShowFacturenOverzicht(true)} className="text-xs underline" style={{ color: C.inkSoft }}>Eerder aangemaakte facturen ({facturen.length})</button>}
-          {!readOnly && <Btn tone="outline" icon={FileText} onClick={() => setShowFactuur(true)}>Factuur aanmaken</Btn>}
+          {!readOnly && magFactureren && <Btn tone="outline" icon={FileText} onClick={() => setShowFactuur(true)}>Factuur aanmaken</Btn>}
           {!readOnly && <Btn icon={Plus} onClick={() => { setEditing(null); setShowForm(true); }}>Nieuwe boeking</Btn>}
         </div>
       </div>
@@ -4174,7 +4187,8 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
     const nieuw = {
       id: uid(facturen), nummer, datum,
       naam: ontvanger.naam, adres: ontvanger.adres || '', postcode: ontvanger.postcode || '', woonplaats: ontvanger.woonplaats || '',
-      lidId: ontvanger.lidId || null, omschrijving, bedrag: Number(bedrag), gemaaktDoor: ingelogd ? fullName(ingelogd) : '',
+      lidId: ontvanger.lidId || null, omschrijving, bedrag: Number(bedrag),
+      gemaaktDoor: ingelogd ? fullName(ingelogd) : '', gemaaktDoorFunctie: ingelogd ? (ingelogd.functie || '') : '',
     };
     setFacturen([...facturen, nieuw]);
     onLog(`Factuur aangemaakt: ${nummer} — ${ontvanger.naam} (${euro(nieuw.bedrag)})`, 'financien');
@@ -5213,13 +5227,14 @@ function RolBeheer({ rolpermissies, setRolpermissies, readOnly, onLog }) {
   return (
     <Card className="p-4 flex-1 overflow-x-auto">
       <p className="text-xs mb-3" style={{ color: C.inkSoft }}>
-        Elke regel herkent een functienaam (een deel van de tekst, niet hoofdlettergevoelig) en bepaalt welke tabbladen iemand met die functie mag bewerken. Dashboard, Rapportage en Instellingen zijn altijd voor iedereen toegankelijk.
+        Elke regel herkent een functienaam (een deel van de tekst, niet hoofdlettergevoelig) en bepaalt welke tabbladen iemand met die functie mag bewerken, plus eventuele losse extra rechten (zoals facturen aanmaken). Dashboard, Rapportage en Instellingen zijn altijd voor iedereen toegankelijk.
       </p>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left border-b" style={{ borderColor: C.border }}>
             <th className="px-3 py-2 font-medium text-xs" style={{ color: C.inkSoft }}>Functie bevat</th>
             {EDITEERBARE_TABS.map(t => <th key={t.id} className="px-3 py-2 font-medium text-xs" style={{ color: C.inkSoft }}>{t.label}</th>)}
+            {EXTRA_RECHTEN.map(t => <th key={t.id} className="px-3 py-2 font-medium text-xs" style={{ color: C.inkSoft }}>{t.label}</th>)}
             <th></th>
           </tr>
         </thead>
@@ -5230,6 +5245,11 @@ function RolBeheer({ rolpermissies, setRolpermissies, readOnly, onLog }) {
                 <input disabled={readOnly} value={r.patroon} onChange={e => updatePatroon(r.id, e.target.value)} className="rounded border px-2 py-1 text-sm w-32" style={inputStyle} />
               </td>
               {EDITEERBARE_TABS.map(t => (
+                <td key={t.id} className="px-3 py-2 text-center">
+                  <input type="checkbox" disabled={readOnly} checked={r.tabs.includes(t.id)} onChange={() => toggleTab(r.id, t.id)} />
+                </td>
+              ))}
+              {EXTRA_RECHTEN.map(t => (
                 <td key={t.id} className="px-3 py-2 text-center">
                   <input type="checkbox" disabled={readOnly} checked={r.tabs.includes(t.id)} onChange={() => toggleTab(r.id, t.id)} />
                 </td>
