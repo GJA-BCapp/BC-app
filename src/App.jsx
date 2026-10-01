@@ -53,7 +53,7 @@ function saldoPeriode(tx, rekening, vanaf, tot) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '22-09-2026';
+const APP_VERSIE = '01-10-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -4119,10 +4119,23 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
   const [datum, setDatum] = useState(new Date().toISOString().slice(0, 10));
   const jaar = new Date(datum).getFullYear();
 
+  const [deelnemerZoek, setDeelnemerZoek] = useState('');
+
   const lid = members.find(m => String(m.id) === String(lidId));
+  // Alleen open workshops die ook daadwerkelijk inschrijvingen hebben — geen zin om een lege
+  // of gesloten/afgeronde workshop in deze lijst te tonen.
+  const openWorkshopsMetInschrijvingen = workshops.filter(w => w.status === 'open' && inschrijvingen.some(i => i.workshopId === w.id))
+    .sort((a, b) => a.titel.localeCompare(b.titel));
   const gekozenWorkshop = workshops.find(w => String(w.id) === String(workshopId));
   const workshopInschrijvingen = inschrijvingen.filter(i => String(i.workshopId) === String(workshopId));
   const inschrijving = workshopInschrijvingen.find(i => String(i.id) === String(inschrijvingId));
+
+  const zoekResultaten = deelnemerZoek.trim().length >= 2
+    ? inschrijvingen
+      .filter(i => openWorkshopsMetInschrijvingen.some(w => w.id === i.workshopId) && (i.naam || '').toLowerCase().includes(deelnemerZoek.trim().toLowerCase()))
+      .map(i => ({ inschrijving: i, workshop: workshops.find(w => w.id === i.workshopId) }))
+      .slice(0, 15)
+    : [];
 
   const ontvanger = bron === 'lid'
     ? (lid ? { naam: fullName(lid), adres: lid.adres, postcode: lid.postcode, woonplaats: lid.woonplaats, lidId: lid.id } : null)
@@ -4130,24 +4143,30 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
 
   function wisselBron(nieuweBron) {
     setBron(nieuweBron);
-    setLidId(''); setWorkshopId(''); setInschrijvingId(''); setOmschrijving(''); setBedrag('');
+    setLidId(''); setWorkshopId(''); setInschrijvingId(''); setOmschrijving(''); setBedrag(''); setDeelnemerZoek('');
   }
   function vulContributieIn() {
     if (!lid) return;
-    setOmschrijving(`Contributie ${jaar} — ${fullName(lid)}`);
+    setOmschrijving(`Contributie ${jaar}`);
     setBedrag(String(standaarden.jaarcontributie));
   }
   function vulWorkshopInVoorLid(wId) {
     setWorkshopId(wId);
     const w = workshops.find(x => String(x.id) === wId);
-    if (!w || !lid) return;
-    setOmschrijving(`${w.titel} — ${fullName(lid)}`);
+    if (!w) return;
+    setOmschrijving(w.titel);
     setBedrag(w.bedrag != null ? String(w.bedrag) : '');
   }
   function vulWorkshopbedragIn() {
-    if (!gekozenWorkshop || !ontvanger) return;
-    setOmschrijving(`${gekozenWorkshop.titel} — ${ontvanger.naam}`);
+    if (!gekozenWorkshop) return;
+    setOmschrijving(gekozenWorkshop.titel);
     setBedrag(gekozenWorkshop.bedrag != null ? String(gekozenWorkshop.bedrag) : '');
+  }
+  function kiesUitZoekresultaat(i, w) {
+    setWorkshopId(String(i.workshopId));
+    setInschrijvingId(String(i.id));
+    setDeelnemerZoek('');
+    if (w) { setOmschrijving(w.titel); setBedrag(w.bedrag != null ? String(w.bedrag) : ''); }
   }
 
   function maakFactuur() {
@@ -4186,10 +4205,10 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
             {lid && (
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={vulContributieIn} className="text-xs underline" style={{ color: C.clay }}>Vul contributie {jaar} in ({euro(standaarden.jaarcontributie)})</button>
-                {workshops.filter(w => w.status !== 'afgerond').length > 0 && (
+                {openWorkshopsMetInschrijvingen.length > 0 && (
                   <select onChange={e => e.target.value && vulWorkshopInVoorLid(e.target.value)} defaultValue="" className="text-xs rounded border px-1.5 py-0.5" style={inputStyle}>
                     <option value="">of vul workshop in…</option>
-                    {workshops.filter(w => w.status !== 'afgerond').map(w => <option key={w.id} value={w.id}>{w.titel}</option>)}
+                    {openWorkshopsMetInschrijvingen.map(w => <option key={w.id} value={w.id}>{w.titel}</option>)}
                   </select>
                 )}
               </div>
@@ -4199,10 +4218,27 @@ function FactuurModal({ members, workshops, inschrijvingen, facturen, setFacture
 
         {bron === 'workshop' && (
           <>
+            <Field label="Zoek deelnemer op naam (over alle open workshops heen)">
+              <input className={inputCls} style={inputStyle} placeholder="bv. Janneke" value={deelnemerZoek} onChange={e => setDeelnemerZoek(e.target.value)} />
+            </Field>
+            {zoekResultaten.length > 0 && (
+              <div className="space-y-1 max-h-36 overflow-y-auto rounded-lg border" style={{ borderColor: C.border }}>
+                {zoekResultaten.map(({ inschrijving: i, workshop: w }) => (
+                  <button type="button" key={i.id} onClick={() => kiesUitZoekresultaat(i, w)} className="w-full text-left text-sm px-2.5 py-1.5 hover:bg-black/5 flex items-center justify-between">
+                    <span>{i.naam}{i.herkomst === 'extern' ? ' (extern)' : ''}</span>
+                    <span className="text-xs" style={{ color: C.inkSoft }}>{w ? w.titel : ''}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {deelnemerZoek.trim().length >= 2 && !zoekResultaten.length && (
+              <p className="text-xs italic" style={{ color: C.inkSoft }}>Geen deelnemer met die naam gevonden in een open workshop.</p>
+            )}
+            <p className="text-xs" style={{ color: C.inkSoft }}>Of kies rechtstreeks een workshop en deelnemer:</p>
             <Field label="Workshop">
               <select className={inputCls} style={inputStyle} value={workshopId} onChange={e => { setWorkshopId(e.target.value); setInschrijvingId(''); setOmschrijving(''); setBedrag(''); }}>
                 <option value="">— kies workshop —</option>
-                {workshops.slice().sort((a, b) => a.titel.localeCompare(b.titel)).map(w => <option key={w.id} value={w.id}>{w.titel}</option>)}
+                {openWorkshopsMetInschrijvingen.map(w => <option key={w.id} value={w.id}>{w.titel}</option>)}
               </select>
             </Field>
             {workshopId && (
