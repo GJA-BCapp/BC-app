@@ -53,7 +53,7 @@ function saldoPeriode(tx, rekening, vanaf, tot) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '01-10-2026';
+const APP_VERSIE = '07-10-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -2538,7 +2538,7 @@ function AanwezigenField({ value, onChange, kandidaten }) {
 function MeetingList({ members, vergaderingen, setVergaderingen, actielijst, setActielijst, agendapuntenVooraf, agendapuntenAfsluitend, onOpen, onOpenActielijst, readOnly, onTrash, onLog }) {
   const [showNew, setShowNew] = useState(false);
   const [delId, setDelId] = useState(null);
-  const [tijd, setTijd] = useState('aankomend');
+  const [tijd, setTijd] = useState('recent');
   const openActies = actielijst.filter(a => a.status !== 'klaar');
   const vandaagIso = new Date().toISOString().slice(0, 10);
   let gefilterd;
