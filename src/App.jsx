@@ -53,7 +53,7 @@ function saldoPeriode(tx, rekening, vanaf, tot) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '07-10-2026';
+const APP_VERSIE = '29-10-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -593,15 +593,75 @@ const STORAGE_KEYS = {
   overigeActiviteiten: 'bladels:overigeactiviteiten', facturen: 'bladels:facturen', factuurteller: 'bladels:factuurteller',
 };
 
-function useStored(key, seed, shared = false, onSaved) {
+/* Drieweg-samenvoeging: base = laatst gesynchroniseerde stand, mine = mijn wijziging, theirs = huidige stand op de server. */
+function merge3(base, mine, theirs) {
+  const gelijk = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  if (gelijk(mine, base)) return theirs;
+  if (gelijk(theirs, base) || gelijk(mine, theirs)) return mine;
+  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  const heeftIds = (a) => Array.isArray(a) && a.every(x => isObj(x) && x.id !== undefined && x.id !== null);
+  if (isObj(mine) && isObj(theirs)) {
+    const b = isObj(base) ? base : {};
+    const uit = {};
+    const sleutels = new Set([...Object.keys(mine), ...Object.keys(theirs)]);
+    sleutels.forEach(k => {
+      const inM = k in mine, inT = k in theirs, inB = k in b;
+      if (inM && inT) uit[k] = merge3(b[k], mine[k], theirs[k]);
+      else if (inM) { if (!inB || !gelijk(mine[k], b[k])) uit[k] = mine[k]; }
+      else if (inT) { if (!inB || !gelijk(theirs[k], b[k])) uit[k] = theirs[k]; }
+    });
+    return uit;
+  }
+  if (heeftIds(mine) && heeftIds(theirs)) {
+    const b = heeftIds(base) ? base : [];
+    const mapB = new Map(b.map(x => [x.id, x]));
+    const mapM = new Map(mine.map(x => [x.id, x]));
+    const mapT = new Map(theirs.map(x => [x.id, x]));
+    const maxId = Math.max(0, ...[...mine, ...theirs].map(x => (typeof x.id === 'number' ? x.id : 0)));
+    let volgendeId = maxId + 1;
+    const orderM = mine.map(x => x.id).join('|') !== b.map(x => x.id).filter(id => mapM.has(id)).join('|');
+    const bron = orderM ? mine : theirs;
+    const andere = orderM ? theirs : mine;
+    const ids = [];
+    [...bron, ...andere].forEach(x => { if (!ids.includes(x.id)) ids.push(x.id); });
+    const uit = [];
+    ids.forEach(id => {
+      const inM = mapM.has(id), inT = mapT.has(id), inB = mapB.has(id);
+      if (inM && inT) {
+        if (!inB && !gelijk(mapM.get(id), mapT.get(id)) && typeof id === 'number') {
+          uit.push(mapT.get(id));
+          uit.push({ ...mapM.get(id), id: volgendeId++ }); // zelfde id tegelijk aangemaakt: beide bewaren
+        } else uit.push(merge3(mapB.get(id), mapM.get(id), mapT.get(id)));
+      } else if (inM) { if (!inB || !gelijk(mapM.get(id), mapB.get(id))) uit.push(mapM.get(id)); }
+      else if (inT) { if (!inB || !gelijk(mapT.get(id), mapB.get(id))) uit.push(mapT.get(id)); }
+    });
+    return uit;
+  }
+  return mine;
+}
+
+/* pollMs > 0: elke zoveel ms de server controleren op wijzigingen van anderen (alleen bij zichtbaar tabblad).
+   Daarnaast wordt altijd ververst zodra het venster weer actief wordt. */
+function useStored(key, seed, shared = false, onSaved, pollMs = 0) {
   const [data, setData] = useState(seed);
   const [ready, setReady] = useState(false);
+  const dataRef = useRef(seed);
+  const baseRef = useRef(null);       // laatst gesynchroniseerde stand met de server
+  const pendingRef = useRef(0);       // aantal nog niet afgeronde opslagacties
+  const seqRef = useRef(0);
+  const lastEditRef = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await opslagLezen(key, shared);
-        if (!cancelled && res && res.value) setData(JSON.parse(res.value));
+        if (!cancelled && res && res.value) {
+          const parsed = JSON.parse(res.value);
+          baseRef.current = parsed;
+          dataRef.current = parsed;
+          setData(parsed);
+        }
       } catch (e) {
         /* geen opgeslagen versie -> seed blijft actief */
       } finally {
@@ -611,22 +671,72 @@ function useStored(key, seed, shared = false, onSaved) {
     return () => { cancelled = true; };
   }, [key]);
 
+  const ververs = useCallback(async () => {
+    if (pendingRef.current > 0 || Date.now() - lastEditRef.current < 2500) return;
+    try {
+      const res = await opslagLezen(key, shared);
+      if (!res || !res.value) return;
+      if (pendingRef.current > 0 || Date.now() - lastEditRef.current < 2500) return;
+      if (res.value === JSON.stringify(dataRef.current)) return;
+      const parsed = JSON.parse(res.value);
+      baseRef.current = parsed;
+      dataRef.current = parsed;
+      setData(parsed);
+    } catch (e) { /* volgende ronde opnieuw */ }
+  }, [key]);
+
+  useEffect(() => {
+    if (!ready) return undefined;
+    const bijFocus = () => { if (document.visibilityState === 'visible') ververs(); };
+    document.addEventListener('visibilitychange', bijFocus);
+    window.addEventListener('focus', bijFocus);
+    let timer = null;
+    if (pollMs > 0) timer = setInterval(() => { if (document.visibilityState === 'visible') ververs(); }, pollMs);
+    return () => {
+      document.removeEventListener('visibilitychange', bijFocus);
+      window.removeEventListener('focus', bijFocus);
+      if (timer) clearInterval(timer);
+    };
+  }, [ready, pollMs, ververs]);
+
   const persist = useCallback((next) => {
     setData(next);
+    dataRef.current = next;
+    lastEditRef.current = Date.now();
+    pendingRef.current += 1;
+    const mijnSeq = ++seqRef.current;
     planOpslag(async () => {
-      const json = JSON.stringify(next);
-      try {
+      if (mijnSeq !== seqRef.current) { pendingRef.current -= 1; return; } // nieuwere wijziging staat al in de wachtrij
+      const schrijf = async () => {
+        let teSchrijven = next;
+        try {
+          const res = await opslagLezen(key, shared);
+          if (res && res.value && baseRef.current !== null) {
+            teSchrijven = merge3(baseRef.current, next, JSON.parse(res.value));
+          }
+        } catch (e) { teSchrijven = next; }
+        const json = JSON.stringify(teSchrijven);
         await opslagSchrijven(key, json, shared);
+        baseRef.current = teSchrijven;
+        if (mijnSeq === seqRef.current && JSON.stringify(next) !== json && Date.now() - lastEditRef.current > 1500) {
+          dataRef.current = teSchrijven;
+          setData(teSchrijven);
+        }
+      };
+      try {
+        await schrijf();
         if (onSaved) onSaved(true);
       } catch (e) {
         await new Promise(r => setTimeout(r, 600));
         try {
-          await opslagSchrijven(key, json, shared);
+          await schrijf();
           if (onSaved) onSaved(true);
         } catch (e2) {
           console.error('opslaan mislukt voor', key, e2);
           if (onSaved) onSaved(false);
         }
+      } finally {
+        pendingRef.current -= 1;
       }
     });
   }, [key]);
@@ -1008,11 +1118,11 @@ export default function BladelsCreatiefApp() {
   }, [accounts]);
   const [budget, setBudget] = useStored('bladels:begroting', SEED_BUDGET, true, flash);
   const [boekjaren, setBoekjaren] = useStored('bladels:boekjaren', SEED_YEARS, true, flash);
-  const [vergaderingen, setVergaderingen] = useStored('bladels:vergaderingen', [], true, flash);
+  const [vergaderingen, setVergaderingen] = useStored('bladels:vergaderingen', [], true, flash, tab === 'vergaderingen' ? 4000 : 0);
   const [overigeActiviteiten, setOverigeActiviteiten] = useStored('bladels:overigeactiviteiten', [], true, flash);
   const [facturen, setFacturen] = useStored('bladels:facturen', [], true, flash);
   const [factuurteller, setFactuurteller] = useStored('bladels:factuurteller', {}, true, flash);
-  const [actielijst, setActielijst] = useStored('bladels:actielijst', [], true, flash);
+  const [actielijst, setActielijst] = useStored('bladels:actielijst', [], true, flash, tab === 'vergaderingen' ? 4000 : 0);
   const [contributies, setContributies] = useStored('bladels:contributies', [], true, flash);
   const [pins, setPins] = useStored('bladels:pins', {}, true, flash);
   const [beveiliging, setBeveiliging] = useStored('bladels:beveiliging', { tfaVerplicht: false, tfaVertrouwensdagen: 30, wachtwoordEisen: false }, true, flash);
@@ -1029,6 +1139,8 @@ export default function BladelsCreatiefApp() {
   const [prullenbak, setPrullenbak] = useStored('bladels:prullenbak', [], true, flash);
   const [ingelogd, setIngelogd] = useState(null);
   const [pendingQuery, setPendingQuery] = useState('');
+  // Zoekopdracht uit 'Zoek overal' alleen eenmalig meegeven; anders komt het filter bij elk bezoek aan het tabblad terug.
+  useEffect(() => { if (pendingQuery) setPendingQuery(''); }, [tab]);
 
   async function stuurSessieSignaal(naam, verwijderen) {
     try {
