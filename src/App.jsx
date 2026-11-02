@@ -6,7 +6,7 @@ import {
   Filter, ArrowUpRight, ArrowDownRight, Grid3x3, ListChecks, Landmark, Printer,
   ClipboardList, ArrowLeft, CheckSquare, Square, FileText, Link2,
   Settings, History, RotateCcw, DatabaseBackup, CheckCircle2, AlertCircle, Palette, Clock3, Upload, Phone, MessageCircle, ChevronUp, ChevronDown, Copy, Lock, Sliders,
-  ExternalLink
+  ExternalLink, Paperclip
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -53,7 +53,7 @@ function saldoPeriode(tx, rekening, vanaf, tot) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '29-10-2026';
+const APP_VERSIE = '02-11-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -579,6 +579,40 @@ async function opslagSchrijven(key, waarde) {
   });
   if (!res.ok) throw new Error(`Opslag schrijven mislukt (${res.status})`);
   return { key, value: waarde };
+}
+const BIJLAGE_MAX_BYTES = 25 * 1024 * 1024;
+const BIJLAGE_TYPES = ['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'txt', 'csv'];
+function fmtBestandsgrootte(b) {
+  if (b >= 1024 * 1024) return (b / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB';
+  return Math.max(1, Math.round(b / 1024)) + ' KB';
+}
+function nieuwBestandId() {
+  return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'b-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+async function bestandUploaden(id, file) {
+  const res = await fetch(`/api/bestand/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: apiHeaders({ 'Content-Type': file.type || 'application/octet-stream', 'X-Bestandsnaam': encodeURIComponent(file.name) }),
+    body: file,
+  });
+  if (!res.ok) {
+    let melding = `Uploaden mislukt (${res.status})`;
+    try { const d = await res.json(); if (d && d.fout) melding = d.fout; } catch (e) { /* geen JSON */ }
+    throw new Error(melding);
+  }
+}
+async function bestandOphalen(id, naam) {
+  const res = await fetch(`/api/bestand/${encodeURIComponent(id)}`, { headers: apiHeaders() });
+  if (!res.ok) throw new Error(res.status === 404 ? 'Bestand niet gevonden' : `Downloaden mislukt (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = naam;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+async function bestandVerwijderen(id) {
+  try { await fetch(`/api/bestand/${encodeURIComponent(id)}`, { method: 'DELETE', headers: apiHeaders() }); } catch (e) { /* best effort */ }
 }
 const STORAGE_KEYS = {
   leden: 'bladels:leden', workshops: 'bladels:workshops', workshopinschrijvingen: 'bladels:workshopinschrijvingen',
@@ -2495,7 +2529,8 @@ function vergaderingWordHtml(v, actielijst, logoHoogteCm) {
   const notulenHtml = v.agendapunten.map((p, i) => {
     const acties = actielijst.filter(a => a.agendapuntId === p.id);
     const actiesHtml = acties.length ? `<table><tr><th>Actiepunt</th><th>Wie</th><th>Deadline</th><th>Status</th></tr>${acties.map(a => `<tr><td>${escapeHtml(a.omschrijving)}</td><td>${escapeHtml(a.wie || '—')}</td><td>${a.deadline ? fmtDate(a.deadline) : '—'}</td><td class="${a.status === 'klaar' ? 'status-klaar' : 'status-open'}">${a.status === 'klaar' ? 'Klaar' : 'Open'}</td></tr>`).join('')}</table>` : '';
-    return `<h3>${i + 1}. ${escapeHtml(p.titel)}</h3><p>${escapeHtml(p.notulen || '(geen notulen ingevoerd)').replace(/\n/g, '<br/>')}</p>${actiesHtml}`;
+    const bijlHtml = (p.bijlagen && p.bijlagen.length) ? `<p><strong>Bijlagen:</strong> ${p.bijlagen.map(b => escapeHtml(b.naam)).join('; ')}</p>` : '';
+    return `<h3>${i + 1}. ${escapeHtml(p.titel)}</h3><p>${escapeHtml(p.notulen || '(geen notulen ingevoerd)').replace(/\n/g, '<br/>')}</p>${bijlHtml}${actiesHtml}`;
   }).join('');
   const actieTabel = gekoppeld.length
     ? `<table><tr><th>Actiepunt</th><th>Agendapunt</th><th>Wie</th><th>Deadline</th><th>Status</th></tr>${gekoppeld.map(a => `<tr><td>${escapeHtml(a.omschrijving)}</td><td>${escapeHtml(a.agendapuntTitel || '—')}</td><td>${escapeHtml(a.wie || '—')}</td><td>${a.deadline ? fmtDate(a.deadline) : '—'}</td><td class="${a.status === 'klaar' ? 'status-klaar' : 'status-open'}">${a.status === 'klaar' ? 'Klaar' : 'Open'}</td></tr>`).join('')}</table>`
@@ -2804,6 +2839,40 @@ function MeetingDetail({ members, vergadering, vergaderingen, setVergaderingen, 
   const [showAddPunt, setShowAddPunt] = useState(false);
   const [delPuntId, setDelPuntId] = useState(null);
   const [delActieId, setDelActieId] = useState(null);
+  const [uploadBezig, setUploadBezig] = useState(null); // puntId waarvoor een upload loopt
+  const [bijlageFout, setBijlageFout] = useState('');
+  const [delBijlage, setDelBijlage] = useState(null); // { puntId, bijlage }
+
+  async function voegBijlageToe(punt, file) {
+    setBijlageFout('');
+    if (!file) return;
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!BIJLAGE_TYPES.includes(ext)) { setBijlageFout(`Bestandstype .${ext} is niet toegestaan (toegestaan: ${BIJLAGE_TYPES.join(', ')}).`); return; }
+    if (file.size > BIJLAGE_MAX_BYTES) { setBijlageFout(`${file.name} is ${fmtBestandsgrootte(file.size)} — maximaal 25 MB.`); return; }
+    const id = nieuwBestandId();
+    setUploadBezig(punt.id);
+    try {
+      await bestandUploaden(id, file);
+      const nieuw = { id, naam: file.name, grootte: file.size, toegevoegd: new Date().toISOString().slice(0, 10) };
+      updatePunt(punt.id, { bijlagen: [...(punt.bijlagen || []), nieuw] });
+      onLog(`Bijlage toegevoegd: ${file.name} (${punt.titel}, ${vergadering.titel})`, 'vergaderingen');
+    } catch (e) {
+      setBijlageFout(e.message || 'Uploaden mislukt');
+    } finally {
+      setUploadBezig(null);
+    }
+  }
+  async function downloadBijlage(b) {
+    setBijlageFout('');
+    try { await bestandOphalen(b.id, b.naam); } catch (e) { setBijlageFout(e.message || 'Downloaden mislukt'); }
+  }
+  function verwijderBijlage(puntId, b) {
+    const punt = vergadering.agendapunten.find(x => x.id === puntId);
+    if (!punt) return;
+    updatePunt(puntId, { bijlagen: (punt.bijlagen || []).filter(x => x.id !== b.id) });
+    bestandVerwijderen(b.id);
+    onLog(`Bijlage verwijderd: ${b.naam} (${punt.titel}, ${vergadering.titel})`, 'vergaderingen');
+  }
 
   function update(patch) {
     setVergaderingen(vergaderingen.map(x => x.id === vergadering.id ? { ...x, ...patch } : x));
@@ -2819,6 +2888,7 @@ function MeetingDetail({ members, vergadering, vergaderingen, setVergaderingen, 
   function removePunt(puntId) {
     const p = vergadering.agendapunten.find(x => x.id === puntId);
     update({ agendapunten: vergadering.agendapunten.filter(p => p.id !== puntId) });
+    if (p && p.bijlagen) p.bijlagen.forEach(b => bestandVerwijderen(b.id));
     if (p) onLog(`Agendapunt verwijderd: ${p.titel} (${vergadering.titel})`, 'vergaderingen');
   }
   function movePunt(puntId, richting) {
@@ -2908,6 +2978,32 @@ function MeetingDetail({ members, vergadering, vergaderingen, setVergaderingen, 
               </div>
               <div className="mt-2.5">
                 <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium flex items-center gap-1" style={{ color: C.inkSoft }}><Paperclip size={12} /> Bijlagen</span>
+                  {!readOnly && (
+                    <label className="text-xs underline cursor-pointer" style={{ color: C.clay, opacity: uploadBezig === p.id ? 0.5 : 1 }}>
+                      {uploadBezig === p.id ? 'Bezig met uploaden…' : '+ bestand toevoegen'}
+                      <input type="file" className="hidden" disabled={uploadBezig !== null}
+                        accept={BIJLAGE_TYPES.map(t => '.' + t).join(',')}
+                        onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; voegBijlageToe(p, f); }} />
+                    </label>
+                  )}
+                </div>
+                {(p.bijlagen || []).length > 0 ? (
+                  <div className="space-y-1">
+                    {p.bijlagen.map(b => (
+                      <div key={b.id} className="flex items-center gap-2 text-sm px-2 py-1.5 rounded" style={{ background: C.paperDim }}>
+                        <FileText size={14} style={{ color: C.inkSoft }} />
+                        <button onClick={() => downloadBijlage(b)} className="flex-1 text-left underline truncate" style={{ color: C.ink }} title="Downloaden">{b.naam}</button>
+                        <span className="text-xs" style={{ color: C.inkSoft }}>{fmtBestandsgrootte(b.grootte || 0)}</span>
+                        <button onClick={() => downloadBijlage(b)} style={{ color: C.sageDeep }} title="Downloaden"><Download size={14} /></button>
+                        {!readOnly && <button onClick={() => setDelBijlage({ puntId: p.id, bijlage: b })} style={{ color: C.rose }}><Trash2 size={12} /></button>}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-xs italic" style={{ color: C.inkSoft }}>Geen bijlagen.</p>}
+              </div>
+              <div className="mt-2.5">
+                <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium" style={{ color: C.inkSoft }}>Actiepunten bij dit agendapunt</span>
                   {!readOnly && <button onClick={() => setActieVoorPunt(p)} className="text-xs underline" style={{ color: C.clay }}>+ actiepunt</button>}
                 </div>
@@ -2933,6 +3029,16 @@ function MeetingDetail({ members, vergadering, vergaderingen, setVergaderingen, 
         {!vergadering.agendapunten.length && <EmptyState icon={ClipboardList} text="Nog geen agendapunten — voeg er een toe om te starten." />}
       </div>
 
+      {bijlageFout && (
+        <div className="flex items-start gap-2 text-sm px-3 py-2 rounded-lg" style={{ background: '#F3E0E0', color: C.rose }}>
+          <AlertCircle size={15} className="mt-0.5 flex-shrink-0" /><span className="flex-1">{bijlageFout}</span>
+          <button onClick={() => setBijlageFout('')}><X size={14} /></button>
+        </div>
+      )}
+      {delBijlage && (
+        <ConfirmModal message={`Bijlage "${delBijlage.bijlage.naam}" verwijderen? Het bestand wordt definitief gewist.`}
+          onConfirm={() => { verwijderBijlage(delBijlage.puntId, delBijlage.bijlage); setDelBijlage(null); }} onCancel={() => setDelBijlage(null)} />
+      )}
       {actieVoorPunt && <ActieForm punt={actieVoorPunt} onSave={data => addActie(actieVoorPunt, data)} onClose={() => setActieVoorPunt(null)} />}
       {showAddPunt && (
         <PromptModal title="Agendapunt toevoegen" label="Titel van het agendapunt" placeholder="bv. Financieel overzicht"
