@@ -55,7 +55,7 @@ function saldoPeriode(tx, rekening, vanaf, tot) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '10-11-2026';
+const APP_VERSIE = '26-11-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -626,7 +626,7 @@ const STORAGE_KEYS = {
   beveiliging: 'bladels:beveiliging', standaarden: 'bladels:standaarden', workshopsortering: 'bladels:workshopsortering',
   tfaSecrets: 'bladels:tfa-secrets', tfaVertrouwd: 'bladels:tfa-vertrouwd', rolpermissies: 'bladels:rolpermissies',
   logboek: 'bladels:logboek', prullenbak: 'bladels:prullenbak', sessies: 'bladels:sessies',
-  overigeActiviteiten: 'bladels:overigeactiviteiten', facturen: 'bladels:facturen', factuurteller: 'bladels:factuurteller',
+  overigeActiviteiten: 'bladels:overigeactiviteiten', facturen: 'bladels:facturen', factuurteller: 'bladels:factuurteller', wachtlijst: 'bladels:wachtlijst',
 };
 
 /* Drieweg-samenvoeging: base = laatst gesynchroniseerde stand, mine = mijn wijziging, theirs = huidige stand op de server. */
@@ -1158,6 +1158,7 @@ export default function BladelsCreatiefApp() {
   const [overigeActiviteiten, setOverigeActiviteiten] = useStored('bladels:overigeactiviteiten', [], true, flash);
   const [facturen, setFacturen] = useStored('bladels:facturen', [], true, flash);
   const [factuurteller, setFactuurteller] = useStored('bladels:factuurteller', {}, true, flash);
+  const [wachtlijst, setWachtlijst] = useStored('bladels:wachtlijst', [], true, flash);
   const [actielijst, setActielijst] = useStored('bladels:actielijst', [], true, flash, tab === 'vergaderingen' ? 4000 : 0);
   const [contributies, setContributies] = useStored('bladels:contributies', [], true, flash);
   const [pins, setPins] = useStored('bladels:pins', {}, true, flash);
@@ -1289,7 +1290,7 @@ export default function BladelsCreatiefApp() {
           initialQuery={pendingQuery} onTrash={trashIt} onLog={logAction} />}
         {tab === 'workshops' && <WorkshopsTab members={members} workshops={workshops} setWorkshops={setWorkshops}
           inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen} tx={tx} setTx={setTx} accounts={accounts}
-          workshopSoorten={workshopSoorten} logoHoogteCm={standaarden.logoHoogteCm}
+          workshopSoorten={workshopSoorten} logoHoogteCm={standaarden.logoHoogteCm} wachtlijst={wachtlijst} setWachtlijst={setWachtlijst}
           workshopSortering={workshopSortering} setWorkshopSortering={setWorkshopSortering}
           readOnly={readOnly('workshops')} initialQuery={pendingQuery} onTrash={trashIt} onLog={logAction} />}
         {tab === 'vergaderingen' && <VergaderingenTab members={members} vergaderingen={vergaderingen} setVergaderingen={setVergaderingen} actielijst={actielijst} setActielijst={setActielijst}
@@ -1323,10 +1324,11 @@ export default function BladelsCreatiefApp() {
             contributies={contributies} setContributies={setContributies}
             vergaderingen={vergaderingen} setVergaderingen={setVergaderingen}
             overigeActiviteiten={overigeActiviteiten} setOverigeActiviteiten={setOverigeActiviteiten}
+            wachtlijst={wachtlijst} setWachtlijst={setWachtlijst}
             facturen={facturen} setFacturen={setFacturen} factuurteller={factuurteller} setFactuurteller={setFactuurteller}
             magLeden={magBewerken.has('leden')} magWorkshops={magBewerken.has('workshops')} magFinancien={magBewerken.has('financien')} magVergaderingen={magBewerken.has('vergaderingen')}
             magLedenImporteren={magBewerken.has('leden')} magWorkshopsImporteren={magBewerken.has('workshops')} magFinancienImporteren={magBewerken.has('financien')}
-            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen, overigeActiviteiten, facturen, factuurteller }}
+            backupData={{ members, workshops, inschrijvingen, tx, accounts, budget, boekjaren, vergaderingen, actielijst, contributies, rolpermissies, begrotingKoppelingen, overigeActiviteiten, facturen, factuurteller, wachtlijst }}
             onLog={logAction} />
         )}
       </main>
@@ -2121,11 +2123,11 @@ function MemberForm({ member, dagdelen, onSave, onClose }) {
         <Field label="E-mailadres"><input className={inputCls} style={inputStyle} value={f.email || ''} onChange={e => upd('email', e.target.value)} /></Field>
         <Field label="Telefoonnr."><input className={inputCls} style={inputStyle} value={f.telefoon || ''} onChange={e => upd('telefoon', e.target.value)} /></Field>
         <Field label="Adres"><input className={inputCls} style={inputStyle} value={f.adres || ''} onChange={e => upd('adres', e.target.value)} /></Field>
-        <Field label="Geboortedatum"><input type="date" className={inputCls} style={inputStyle} value={f.gebdatum || ''} onChange={e => upd('gebdatum', e.target.value)} /></Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Postcode"><input className={inputCls} style={inputStyle} value={f.postcode || ''} onChange={e => upd('postcode', e.target.value)} /></Field>
           <Field label="Woonplaats"><input className={inputCls} style={inputStyle} value={f.woonplaats || ''} onChange={e => upd('woonplaats', e.target.value)} /></Field>
         </div>
+        <Field label="Geboortedatum"><input type="date" className={inputCls} style={inputStyle} value={f.gebdatum || ''} onChange={e => upd('gebdatum', e.target.value)} /></Field>
         <Field label="Lid sinds"><input type="date" className={inputCls} style={inputStyle} value={f.lidsinds || ''} onChange={e => upd('lidsinds', e.target.value)} /></Field>
         <Field label="Functie"><input className={inputCls} style={inputStyle} placeholder="bv. Bestuurslid" value={f.functie || ''} onChange={e => upd('functie', e.target.value)} /></Field>
         <Field label="Status">
@@ -3161,7 +3163,7 @@ function ActielijstView({ actielijst, setActielijst, logoHoogteCm, onBack, readO
 /* =========================================================================
    WORKSHOPS — generieke workshopadministratie (incl. jeugdatelier-blokken)
 ========================================================================= */
-function WorkshopsTab({ members, workshops, setWorkshops, inschrijvingen, setInschrijvingen, tx, setTx, accounts, workshopSoorten, logoHoogteCm, workshopSortering, setWorkshopSortering, readOnly, initialQuery, onTrash, onLog }) {
+function WorkshopsTab({ members, workshops, setWorkshops, inschrijvingen, setInschrijvingen, tx, setTx, accounts, workshopSoorten, logoHoogteCm, workshopSortering, setWorkshopSortering, wachtlijst, setWachtlijst, readOnly, initialQuery, onTrash, onLog }) {
   const [view, setView] = useState('lijst');
   const [selectedId, setSelectedId] = useState(null);
   const selected = workshops.find(w => w.id === selectedId);
@@ -3171,15 +3173,20 @@ function WorkshopsTab({ members, workshops, setWorkshops, inschrijvingen, setIns
       inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen} tx={tx} setTx={setTx} accounts={accounts} workshopSoorten={workshopSoorten}
       readOnly={readOnly} onBack={() => setView('lijst')} onTrash={onTrash} onLog={onLog} />;
   }
+  if (view === 'wachtlijst') {
+    return <WachtlijstView members={members} wachtlijst={wachtlijst} setWachtlijst={setWachtlijst} workshops={workshops}
+      inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen} workshopSoorten={workshopSoorten}
+      readOnly={readOnly} onBack={() => setView('lijst')} onLog={onLog} />;
+  }
   return (
-    <WorkshopList workshops={workshops} setWorkshops={setWorkshops} inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen}
+    <WorkshopList wachtlijstAantal={wachtlijst.length} onOpenWachtlijst={() => setView('wachtlijst')} workshops={workshops} setWorkshops={setWorkshops} inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen}
       workshopSoorten={workshopSoorten} logoHoogteCm={logoHoogteCm} workshopSortering={workshopSortering} setWorkshopSortering={setWorkshopSortering}
       readOnly={readOnly} initialQuery={initialQuery} onOpen={id => { setSelectedId(id); setView('detail'); }}
       onTrash={onTrash} onLog={onLog} />
   );
 }
 
-function WorkshopList({ workshops, setWorkshops, inschrijvingen, setInschrijvingen, workshopSoorten, logoHoogteCm, workshopSortering, setWorkshopSortering, readOnly, initialQuery, onOpen, onTrash, onLog }) {
+function WorkshopList({ wachtlijstAantal, onOpenWachtlijst, workshops, setWorkshops, inschrijvingen, setInschrijvingen, workshopSoorten, logoHoogteCm, workshopSortering, setWorkshopSortering, readOnly, initialQuery, onOpen, onTrash, onLog }) {
   const [q, setQ] = useState(initialQuery || '');
   const [soort, setSoort] = useState('alle');
   const [status, setStatus] = useState('open');
@@ -3270,6 +3277,7 @@ function WorkshopList({ workshops, setWorkshops, inschrijvingen, setInschrijving
           </select>
         </div>
         <div className="flex items-center gap-2">
+          <Btn icon={Clock3} tone="outline" onClick={onOpenWachtlijst}>Wachtlijst{wachtlijstAantal ? ` (${wachtlijstAantal})` : ''}</Btn>
           <Btn icon={FileText} tone="outline" onClick={() => setShowOverzicht(true)} disabled={!geselecteerd.length}>Overzicht maken{geselecteerd.length ? ` (${geselecteerd.length})` : ''}</Btn>
           {!readOnly && <Btn icon={Plus} onClick={() => setShowNew(true)}>Nieuwe workshop</Btn>}
         </div>
@@ -3420,12 +3428,15 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
   const [betaalFor, setBetaalFor] = useState(null);
   const [delId, setDelId] = useState(null);
   const [soortAnders, setSoortAnders] = useState(!workshopSoorten.includes(workshop.soort));
+  const [deelnemerSort, setDeelnemerSort] = useState('naam'); // 'naam' of 'datum' (inschrijfdatum)
 
   function update(patch) {
     setWorkshops(workshops.map(w => w.id === workshop.id ? { ...w, ...patch } : w));
   }
   const mijnInschrijvingen = inschrijvingen.filter(i => i.workshopId === workshop.id)
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === 'wachtlijst' ? 1 : -1) || (a.naam || '').localeCompare(b.naam || ''));
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === 'wachtlijst' ? 1 : -1)
+      || (deelnemerSort === 'datum' ? ((a.datumInschrijving || '9999').localeCompare(b.datumInschrijving || '9999') || (a.id - b.id)) : 0)
+      || (a.naam || '').localeCompare(b.naam || ''));
   const aantalIngeschreven = mijnInschrijvingen.filter(i => i.status === 'ingeschreven').length;
   const vol = workshop.maxDeelnemers != null && aantalIngeschreven >= workshop.maxDeelnemers;
 
@@ -3575,7 +3586,14 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
         <h3 className="font-semibold flex items-center gap-1.5" style={{ fontFamily: 'Fraunces, serif', color: C.ink }}>
           Deelnemers <Badge tone={vol ? 'ochre' : 'sage'}>{aantalIngeschreven}{workshop.maxDeelnemers != null ? ` / ${workshop.maxDeelnemers}` : ''}</Badge>
         </h3>
-        {!readOnly && <Btn tone="outline" size="sm" icon={Plus} onClick={() => setShowInschrijving(true)}>Inschrijving toevoegen</Btn>}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs" style={{ color: C.inkSoft }}>Sorteer op:</span>
+          {[['naam', 'Naam'], ['datum', 'Inschrijfdatum']].map(([k, l]) => (
+            <button key={k} onClick={() => setDeelnemerSort(k)} className="px-2.5 py-1 rounded-full text-xs border"
+              style={{ background: deelnemerSort === k ? C.clay : 'transparent', color: deelnemerSort === k ? '#fff' : C.ink, borderColor: deelnemerSort === k ? C.clay : C.border }}>{l}</button>
+          ))}
+          {!readOnly && <Btn tone="outline" size="sm" icon={Plus} onClick={() => setShowInschrijving(true)}>Inschrijving toevoegen</Btn>}
+        </div>
       </div>
       {vol && <p className="text-xs" style={{ color: C.ochre }}>Deze workshop zit vol — nieuwe inschrijvingen komen automatisch op de wachtlijst.</p>}
 
@@ -3642,7 +3660,174 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
   );
 }
 
-function InschrijvingForm({ members, inschrijvingen, workshopSoort, item, onSave, onClose }) {
+function WachtlijstView({ members, wachtlijst, setWachtlijst, workshops, inschrijvingen, setInschrijvingen, workshopSoorten, readOnly, onBack, onLog }) {
+  const [soortFilter, setSoortFilter] = useState('alle');
+  const [sortDir, setSortDir] = useState('asc'); // oudste inschrijving bovenaan
+  const [sortVeld, setSortVeld] = useState('datum');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [plaatsFor, setPlaatsFor] = useState(null);
+  const [delId, setDelId] = useState(null);
+
+  const soorten = Array.from(new Set([...workshopSoorten, ...wachtlijst.map(w => w.soort).filter(Boolean)])).sort();
+  const lijst = wachtlijst
+    .filter(w => soortFilter === 'alle' || w.soort === soortFilter)
+    .sort((a, b) => {
+      let c;
+      if (sortVeld === 'naam') c = (a.naam || '').localeCompare(b.naam || '');
+      else if (sortVeld === 'soort') c = (a.soort || '').localeCompare(b.soort || '') || (a.datumInschrijving || '9999').localeCompare(b.datumInschrijving || '9999');
+      else c = (a.datumInschrijving || '9999').localeCompare(b.datumInschrijving || '9999');
+      if (c === 0) c = a.id - b.id;
+      return sortDir === 'asc' ? c : -c;
+    });
+  function toggleSort(veld) {
+    if (sortVeld === veld) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortVeld(veld); setSortDir('asc'); }
+  }
+  const pijl = (veld) => sortVeld === veld ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '';
+
+  function opslaan(data) {
+    const { betaald, bedrag, status, ...rest } = data;
+    if (rest.id) {
+      setWachtlijst(wachtlijst.map(w => w.id === rest.id ? { ...w, ...rest } : w));
+      onLog(`Wachtlijst bewerkt (${rest.soort}): ${rest.naam}`, 'workshops');
+    } else {
+      setWachtlijst([...wachtlijst, { id: uid(wachtlijst), ...rest }]);
+      onLog(`Op wachtlijst gezet (${rest.soort}): ${rest.naam}`, 'workshops');
+    }
+    setShowForm(false); setEditing(null);
+  }
+  function verwijder(id) {
+    const w = wachtlijst.find(x => x.id === id);
+    setWachtlijst(wachtlijst.filter(x => x.id !== id));
+    if (w) onLog(`Van wachtlijst verwijderd (${w.soort}): ${w.naam}`, 'workshops');
+  }
+  function plaats(item, workshopId) {
+    const ws = workshops.find(x => x.id === workshopId);
+    if (!ws) return;
+    const nieuw = {
+      id: uid(inschrijvingen), workshopId, herkomst: item.herkomst || 'extern', lidId: item.lidId ?? null, naam: item.naam,
+      email: item.email || '', email2: item.email2 || '', telefoon: item.telefoon || '', telefoon2: item.telefoon2 || '',
+      leeftijd: item.leeftijd ?? null, groep: item.groep || '', status: 'ingeschreven', betaald: false, bedrag: null,
+      datumInschrijving: item.datumInschrijving || new Date().toISOString().slice(0, 10), notitie: item.notitie || '',
+    };
+    setInschrijvingen([...inschrijvingen, nieuw]);
+    setWachtlijst(wachtlijst.filter(x => x.id !== item.id));
+    onLog(`Van wachtlijst (${item.soort}) geplaatst bij ${ws.titel}: ${item.naam}`, 'workshops');
+    setPlaatsFor(null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-1 text-sm" style={{ color: C.inkSoft }}><ArrowLeft size={15} /> Terug naar workshops</button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold flex items-center gap-1.5" style={{ fontFamily: 'Fraunces, serif', color: C.ink }}>
+          <Clock3 size={16} /> Wachtlijst per soort workshop <Badge tone="ochre">{lijst.length}</Badge>
+        </h3>
+        {!readOnly && <Btn icon={Plus} size="sm" onClick={() => setShowForm(true)}>Op wachtlijst zetten</Btn>}
+      </div>
+      <p className="text-xs" style={{ color: C.inkSoft }}>
+        Deze wachtlijst hoort bij een <em>soort</em> workshop (bijvoorbeeld Jeugdatelier), niet bij één specifieke workshop. Is er plek, kies dan "Plaatsen" en selecteer een open workshop van hetzelfde soort.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={soortFilter} onChange={e => setSoortFilter(e.target.value)} className={inputCls} style={inputStyle}>
+          <option value="alle">Alle soorten</option>
+          {soorten.map(sn => <option key={sn} value={sn}>{sn}</option>)}
+        </select>
+        <span className="text-xs" style={{ color: C.inkSoft }}>Sorteer op:</span>
+        {[['datum', 'Inschrijfdatum'], ['naam', 'Naam'], ['soort', 'Soort']].map(([k, l]) => (
+          <button key={k} onClick={() => toggleSort(k)} className="px-2.5 py-1 rounded-full text-xs border"
+            style={{ background: sortVeld === k ? C.clay : 'transparent', color: sortVeld === k ? '#fff' : C.ink, borderColor: sortVeld === k ? C.clay : C.border }}>{l}{pijl(k)}</button>
+        ))}
+      </div>
+      <Card className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left border-b" style={{ borderColor: C.border }}>
+              {['#', 'Naam', 'Soort', 'Contact', 'Inschrijfdatum', ''].map(h => <th key={h} className="px-3 py-2 font-medium text-xs" style={{ color: C.inkSoft }}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {lijst.map((w, idx) => (
+              <tr key={w.id} className="border-b last:border-0" style={{ borderColor: C.border }}>
+                <td className="px-3 py-2 text-xs" style={{ color: C.inkSoft }}>{idx + 1}</td>
+                <td className="px-3 py-2 font-medium">
+                  {w.naam}{w.leeftijd ? <span className="text-xs" style={{ color: C.inkSoft }}> ({w.leeftijd} jr)</span> : ''}
+                  {w.groep ? <span className="block text-xs font-normal" style={{ color: C.inkSoft }}>Groep {w.groep}</span> : ''}
+                </td>
+                <td className="px-3 py-2"><Badge tone="ochre">{w.soort}</Badge></td>
+                <td className="px-3 py-2" style={{ color: C.inkSoft }}>
+                  <div>{[w.email, w.telefoon].filter(Boolean).join(' · ') || '—'}</div>
+                  {(w.email2 || w.telefoon2) && <div className="text-xs">{[w.email2, w.telefoon2].filter(Boolean).join(' · ')} (ouder 2)</div>}
+                </td>
+                <td className="px-3 py-2" style={{ color: C.inkSoft }}>{w.datumInschrijving ? fmtDate(w.datumInschrijving) : '—'}</td>
+                <td className="px-3 py-2">
+                  {!readOnly && (
+                    <div className="flex gap-2 justify-end items-center">
+                      <button onClick={() => setPlaatsFor(w)} className="text-xs underline" style={{ color: C.sageDeep }}>plaatsen</button>
+                      <button onClick={() => setEditing(w)} style={{ color: C.inkSoft }}><Pencil size={13} /></button>
+                      <button onClick={() => setDelId(w.id)} style={{ color: C.rose }}><Trash2 size={13} /></button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!lijst.length && <EmptyState icon={Users} text="Niemand op de wachtlijst." />}
+      </Card>
+
+      {(showForm || editing) && (
+        <InschrijvingForm members={members} inschrijvingen={inschrijvingen} item={editing}
+          soortOpties={soorten.length ? soorten : ['Jeugdatelier']} titel={editing ? 'Wachtlijst bewerken' : 'Op wachtlijst zetten'}
+          onSave={opslaan} onClose={() => { setShowForm(false); setEditing(null); }} />
+      )}
+      {plaatsFor && <PlaatsWachtlijstModal item={plaatsFor} workshops={workshops} inschrijvingen={inschrijvingen} onPlaats={id => plaats(plaatsFor, id)} onClose={() => setPlaatsFor(null)} />}
+      {delId != null && (
+        <ConfirmModal message="Deze persoon van de wachtlijst verwijderen?" onConfirm={() => { verwijder(delId); setDelId(null); }} onCancel={() => setDelId(null)} />
+      )}
+    </div>
+  );
+}
+
+function PlaatsWachtlijstModal({ item, workshops, inschrijvingen, onPlaats, onClose }) {
+  const [gekozen, setGekozen] = useState(null);
+  const kandidaten = workshops
+    .filter(w => w.soort === item.soort && w.status === 'open')
+    .map(w => {
+      const aantal = inschrijvingen.filter(i => i.workshopId === w.id && i.status === 'ingeschreven').length;
+      const vol = w.maxDeelnemers != null && aantal >= w.maxDeelnemers;
+      const eerste = (w.datums || []).filter(Boolean).sort()[0];
+      return { w, aantal, vol, eerste };
+    })
+    .sort((a, b) => (a.eerste || '9999').localeCompare(b.eerste || '9999') || (a.w.titel || '').localeCompare(b.w.titel || ''));
+  return (
+    <Modal title={`Plaatsen: ${item.naam}`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm" style={{ color: C.inkSoft }}>Kies een open workshop van het soort <strong>{item.soort}</strong>. De inschrijfdatum van de wachtlijst blijft behouden en de persoon verdwijnt van de wachtlijst.</p>
+        {kandidaten.length ? (
+          <div className="space-y-1.5">
+            {kandidaten.map(({ w, aantal, vol, eerste }) => (
+              <label key={w.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm"
+                style={{ borderColor: gekozen === w.id ? C.clay : C.border, opacity: vol ? 0.5 : 1, cursor: vol ? 'not-allowed' : 'pointer' }}>
+                <input type="radio" name="plaats" disabled={vol} checked={gekozen === w.id} onChange={() => setGekozen(w.id)} />
+                <span className="flex-1">{w.titel}{eerste ? <span className="text-xs" style={{ color: C.inkSoft }}> · start {fmtDate(eerste)}</span> : ''}</span>
+                <Badge tone={vol ? 'ochre' : 'sage'}>{aantal}{w.maxDeelnemers != null ? ` / ${w.maxDeelnemers}` : ''}{vol ? ' vol' : ''}</Badge>
+              </label>
+            ))}
+          </div>
+        ) : <p className="text-sm italic" style={{ color: C.inkSoft }}>Er is geen open workshop van het soort {item.soort}.</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Btn tone="outline" onClick={onClose}>Annuleren</Btn>
+          <Btn onClick={() => gekozen != null && onPlaats(gekozen)} disabled={gekozen == null}>Plaatsen</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function InschrijvingForm({ members, inschrijvingen, workshopSoort, item, onSave, onClose, soortOpties, titel }) {
+  const [gekozenSoort, setGekozenSoort] = useState((item && item.soort) || (soortOpties && soortOpties[0]) || '');
   const [herkomst, setHerkomst] = useState(item ? item.herkomst : 'extern');
   const [lidId, setLidId] = useState(item && item.lidId ? String(item.lidId) : '');
   const [f, setF] = useState(item ? {
@@ -3652,7 +3837,8 @@ function InschrijvingForm({ members, inschrijvingen, workshopSoort, item, onSave
     naam: '', email: '', email2: '', telefoon: '', telefoon2: '', leeftijd: '', groep: '',
     datumInschrijving: new Date().toISOString().slice(0, 10),
   });
-  const isJeugd = workshopSoort === 'Jeugdatelier';
+  const effectieveSoort = soortOpties ? gekozenSoort : workshopSoort;
+  const isJeugd = effectieveSoort === 'Jeugdatelier';
   function upd(k, v) { setF(s => ({ ...s, [k]: v })); }
 
   const eerdereNamen = Array.from(new Set(inschrijvingen.filter(i => i.herkomst === 'extern' && i.naam).map(i => i.naam))).sort();
@@ -3688,11 +3874,19 @@ function InschrijvingForm({ members, inschrijvingen, workshopSoort, item, onSave
       naam: f.naam, email: f.email, email2: isJeugd ? f.email2 : '', telefoon: f.telefoon, telefoon2: isJeugd ? f.telefoon2 : '',
       leeftijd: f.leeftijd === '' ? null : Number(f.leeftijd), groep: isJeugd ? f.groep : '',
       datumInschrijving: f.datumInschrijving, notitie: '',
+      ...(soortOpties ? { soort: gekozenSoort } : {}),
     });
   }
   return (
-    <Modal title={item ? 'Inschrijving bewerken' : 'Inschrijving toevoegen'} onClose={onClose}>
+    <Modal title={titel || (item ? 'Inschrijving bewerken' : 'Inschrijving toevoegen')} onClose={onClose}>
       <div className="space-y-3">
+        {soortOpties && (
+          <Field label="Soort workshop">
+            <select className={inputCls} style={inputStyle} value={gekozenSoort} onChange={e => setGekozenSoort(e.target.value)}>
+              {soortOpties.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </Field>
+        )}
         <div className="flex gap-1">
           {[['extern', 'Extern (geen lid)'], ['lid', 'Bestaand lid']].map(([id, label]) => (
             <button key={id} onClick={() => setHerkomst(id)} className="px-3 py-1.5 rounded-lg text-sm font-medium border"
@@ -5115,7 +5309,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
   dagdelen, setDagdelen,
   workshopSoorten, setWorkshopSoorten, agendapuntenVooraf, setAgendapuntenVooraf, agendapuntenAfsluitend, setAgendapuntenAfsluitend,
   budget, setBudget, actielijst, setActielijst, contributies, setContributies, vergaderingen, setVergaderingen,
-  overigeActiviteiten, setOverigeActiviteiten,
+  overigeActiviteiten, setOverigeActiviteiten, wachtlijst, setWachtlijst,
   magLeden, magWorkshops, magFinancien, magVergaderingen,
   magLedenImporteren, magWorkshopsImporteren, magFinancienImporteren, backupData, onLog }) {
   const [sectie, setSectie] = useState('rollen');
@@ -5205,6 +5399,7 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     if (herstelData.overigeActiviteiten) setOverigeActiviteiten(herstelData.overigeActiviteiten);
     if (herstelData.facturen) setFacturen(herstelData.facturen);
     if (herstelData.factuurteller) setFactuurteller(herstelData.factuurteller);
+    if (herstelData.wachtlijst) setWachtlijst(herstelData.wachtlijst);
     setHerstelResultaat(true);
     setToonBevestiging(false);
     onLog('Back-up hersteld', 'instellingen');
@@ -5277,6 +5472,10 @@ function InstellingenTab({ isVoorzitter, ingelogd, rolpermissies, setRolpermissi
     voegToe('Facturen', [
       ['Nummer', 'Datum', 'Lid', 'Omschrijving', 'Bedrag', 'Gemaakt door'],
       ...(backupData.facturen || []).map(x => [x.nummer, x.datum, x.naam, x.omschrijving, x.bedrag, x.gemaaktDoor]),
+    ]);
+    voegToe('Wachtlijst', [
+      ['Soort', 'Naam', 'E-mail', 'Telefoon', 'Inschrijfdatum'],
+      ...(backupData.wachtlijst || []).map(x => [x.soort, x.naam, x.email, x.telefoon, x.datumInschrijving]),
     ]);
     XLSX.writeFile(wb, `BladelsCreatief_Backup_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
