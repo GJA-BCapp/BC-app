@@ -3169,7 +3169,7 @@ function WorkshopsTab({ members, workshops, setWorkshops, inschrijvingen, setIns
   const selected = workshops.find(w => w.id === selectedId);
 
   if (view === 'detail' && selected) {
-    return <WorkshopDetail key={selected.id} members={members} workshop={selected} workshops={workshops} setWorkshops={setWorkshops}
+    return <WorkshopDetail key={selected.id} wachtlijst={wachtlijst} setWachtlijst={setWachtlijst} members={members} workshop={selected} workshops={workshops} setWorkshops={setWorkshops}
       inschrijvingen={inschrijvingen} setInschrijvingen={setInschrijvingen} tx={tx} setTx={setTx} accounts={accounts} workshopSoorten={workshopSoorten}
       readOnly={readOnly} onBack={() => setView('lijst')} onTrash={onTrash} onLog={onLog} />;
   }
@@ -3422,12 +3422,15 @@ function NewWorkshopModal({ workshopSoorten, onSave, onClose }) {
   );
 }
 
-function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvingen, setInschrijvingen, tx, setTx, accounts, workshopSoorten, readOnly, onBack, onTrash, onLog }) {
+function WorkshopDetail({ wachtlijst, setWachtlijst, members, workshop, workshops, setWorkshops, inschrijvingen, setInschrijvingen, tx, setTx, accounts, workshopSoorten, readOnly, onBack, onTrash, onLog }) {
   const [showInschrijving, setShowInschrijving] = useState(false);
   const [editingInschrijving, setEditingInschrijving] = useState(null);
   const [betaalFor, setBetaalFor] = useState(null);
   const [delId, setDelId] = useState(null);
   const [soortAnders, setSoortAnders] = useState(!workshopSoorten.includes(workshop.soort));
+  const [wlMelding, setWlMelding] = useState('');
+  const [naarWlId, setNaarWlId] = useState(null);
+  const [wlBetaaldMelding, setWlBetaaldMelding] = useState(null);
   const [deelnemerSort, setDeelnemerSort] = useState('naam'); // 'naam' of 'datum' (inschrijfdatum)
 
   function update(patch) {
@@ -3445,10 +3448,17 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
       setInschrijvingen(inschrijvingen.map(i => i.id === data.id ? { ...i, ...data } : i));
       onLog(`Inschrijving bewerkt bij ${workshop.titel}: ${data.naam}`, 'workshops');
     } else {
-      const status = (workshop.maxDeelnemers != null && aantalIngeschreven >= workshop.maxDeelnemers) ? 'wachtlijst' : 'ingeschreven';
-      const nieuw = { id: uid(inschrijvingen), workshopId: workshop.id, ...data, status };
-      setInschrijvingen([...inschrijvingen, nieuw]);
-      onLog(`Inschrijving toegevoegd bij ${workshop.titel}: ${data.naam}${status === 'wachtlijst' ? ' (wachtlijst)' : ''}`, 'workshops');
+      if (workshop.maxDeelnemers != null && aantalIngeschreven >= workshop.maxDeelnemers) {
+        // Workshop zit vol: nieuwe aanmelding gaat naar de wachtlijst per soort.
+        const { betaald, bedrag, status, ...rest } = data;
+        setWachtlijst([...wachtlijst, { id: uid(wachtlijst), soort: workshop.soort, ...rest }]);
+        onLog(`Workshop vol (${workshop.titel}): ${data.naam} op wachtlijst ${workshop.soort} gezet`, 'workshops');
+        setWlMelding(`${data.naam} staat op de wachtlijst voor ${workshop.soort}, omdat deze workshop vol zit. Zie de knop "Wachtlijst" bij Workshops.`);
+      } else {
+        const nieuw = { id: uid(inschrijvingen), workshopId: workshop.id, ...data, status: 'ingeschreven' };
+        setInschrijvingen([...inschrijvingen, nieuw]);
+        onLog(`Inschrijving toegevoegd bij ${workshop.titel}: ${data.naam}`, 'workshops');
+      }
     }
     setShowInschrijving(false);
     setEditingInschrijving(null);
@@ -3464,7 +3474,17 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
     if (i) onLog(`Van wachtlijst naar ingeschreven: ${i.naam} (${workshop.titel})`, 'workshops');
   }
   function naarWachtlijst(id) {
-    setInschrijvingen(inschrijvingen.map(i => i.id === id ? { ...i, status: 'wachtlijst' } : i));
+    // Verplaatst de deelnemer naar de wachtlijst per soort: weg uit de inschrijvingen van deze workshop.
+    const i = inschrijvingen.find(x => x.id === id);
+    if (!i) return;
+    const item = {
+      id: uid(wachtlijst), soort: workshop.soort, herkomst: i.herkomst || 'extern', lidId: i.lidId ?? null, naam: i.naam,
+      email: i.email || '', email2: i.email2 || '', telefoon: i.telefoon || '', telefoon2: i.telefoon2 || '',
+      leeftijd: i.leeftijd ?? null, groep: i.groep || '', datumInschrijving: i.datumInschrijving || new Date().toISOString().slice(0, 10), notitie: i.notitie || '',
+    };
+    setWachtlijst([...wachtlijst, item]);
+    setInschrijvingen(inschrijvingen.filter(x => x.id !== id));
+    onLog(`Van ${workshop.titel} naar wachtlijst (${workshop.soort}): ${i.naam}`, 'workshops');
   }
   function markeerBetaald(inschrijving, data) {
     setInschrijvingen(inschrijvingen.map(i => i.id === inschrijving.id ? { ...i, betaald: true, bedrag: Number(data.bedrag) } : i));
@@ -3595,7 +3615,12 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
           {!readOnly && <Btn tone="outline" size="sm" icon={Plus} onClick={() => setShowInschrijving(true)}>Inschrijving toevoegen</Btn>}
         </div>
       </div>
-      {vol && <p className="text-xs" style={{ color: C.ochre }}>Deze workshop zit vol — nieuwe inschrijvingen komen automatisch op de wachtlijst.</p>}
+      {vol && <p className="text-xs" style={{ color: C.ochre }}>Deze workshop zit vol — nieuwe aanmeldingen komen automatisch op de wachtlijst voor {workshop.soort}.</p>}
+      {wlMelding && (
+        <div className="flex items-start gap-2 text-sm px-3 py-2 rounded-lg" style={{ background: '#F6EBD3', color: '#7A5A17' }}>
+          <span className="flex-1">{wlMelding}</span><button onClick={() => setWlMelding('')}><X size={14} /></button>
+        </div>
+      )}
 
       <Card className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -3630,7 +3655,7 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
                     <div className="flex gap-2 justify-end items-center">
                       {i.status === 'wachtlijst'
                         ? <button onClick={() => promoveer(i.id)} className="text-xs underline" style={{ color: C.sageDeep }}>naar ingeschreven</button>
-                        : <button onClick={() => naarWachtlijst(i.id)} className="text-xs underline" style={{ color: C.inkSoft }}>naar wachtlijst</button>}
+                        : <button onClick={() => i.betaald ? setWlBetaaldMelding(i) : setNaarWlId(i.id)} className="text-xs underline" style={{ color: C.inkSoft }}>naar wachtlijst</button>}
                       <button onClick={() => setEditingInschrijving(i)} style={{ color: C.inkSoft }}><Pencil size={13} /></button>
                       <button onClick={() => setDelId(i.id)} style={{ color: C.rose }}><Trash2 size={13} /></button>
                     </div>
@@ -3652,6 +3677,16 @@ function WorkshopDetail({ members, workshop, workshops, setWorkshops, inschrijvi
         <ConfirmModal title="Betaling op open zetten"
           message={`Dit is gekoppeld aan een boeking in Financiën (${gekoppeldeBoeking(openZonderKoppeling)?.omschrijving || ''}). Doorgaan zet de betaling op open en ontkoppelt de boeking — de boeking zelf blijft gewoon bestaan.`}
           onConfirm={() => doeMarkeerOnbetaald(openZonderKoppeling)} onCancel={() => setOpenZonderKoppeling(null)} />
+      )}
+      {naarWlId != null && (
+        <ConfirmModal title="Naar wachtlijst" confirmLabel="Verplaatsen"
+          message={`Deze deelnemer verdwijnt uit de inschrijvingen van deze workshop en wordt naar de wachtlijst voor ${workshop.soort} gekopieerd (met behoud van de inschrijfdatum).`}
+          onConfirm={() => { naarWachtlijst(naarWlId); setNaarWlId(null); }} onCancel={() => setNaarWlId(null)} />
+      )}
+      {wlBetaaldMelding && (
+        <ConfirmModal title="Eerst betaling terugdraaien" confirmLabel="Begrepen"
+          message={`${wlBetaaldMelding.naam} staat als betaald gemarkeerd. Zet de betaling eerst op open (klik op "Betaald") en verplaats daarna naar de wachtlijst, zodat de boeking in Financiën niet los komt te staan.`}
+          onConfirm={() => setWlBetaaldMelding(null)} onCancel={() => setWlBetaaldMelding(null)} />
       )}
       {delId != null && (
         <ConfirmModal message="Deze inschrijving verwijderen?" onConfirm={() => { removeInschrijving(delId); setDelId(null); }} onCancel={() => setDelId(null)} />
