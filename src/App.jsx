@@ -55,7 +55,7 @@ function saldoPeriode(tx, rekening, vanaf, tot) {
 }
 const SEED_YEARS = [2025,2026,2027];
 
-const APP_VERSIE = '26-11-2026';
+const APP_VERSIE = '27-11-2026';
 const SEED_SLOTS = ["ma 11.00 - 16.00","di 10.00 - 16.00","wo 09.00 - 12.30","wo 19.00 - 22.00","do 09.30 - 16.00","do 19.00 - 22.00"];
 const SEED_AGENDAPUNTEN_VOORAF = ["Opening", "Mededelingen", "Vaststellen agenda", "Notulen vorige vergadering"];
 const SEED_AGENDAPUNTEN_AFSLUITEND = ["Rondvraag", "Sluiting"];
@@ -4518,6 +4518,22 @@ function TxForm({ item, accounts, members, contributies, workshops, inschrijving
   }
   const kandidaten = bouwKoppelKandidaten(contributies, members, inschrijvingen, workshops, f.bedrag, f.omschrijving)
     .filter(k => !koppelZoek.trim() || k.label.toLowerCase().includes(koppelZoek.trim().toLowerCase()));
+  // Bij het kiezen van een contributie/inschrijving wordt de (deels) getypte naam in de omschrijving
+  // vervangen door de volledige naam van het lid, bv. "Tess van" -> "Tess van Gompel".
+  function kiesKandidaat(k) {
+    setF(s => {
+      let omschrijving = s.omschrijving || '';
+      const typed = koppelZoek.trim();
+      if (!omschrijving.trim()) {
+        omschrijving = k.naam;
+      } else if (typed) {
+        const idx = omschrijving.toLowerCase().indexOf(typed.toLowerCase());
+        if (idx >= 0) omschrijving = omschrijving.slice(0, idx) + k.naam + omschrijving.slice(idx + typed.length);
+      }
+      return { ...s, gekoppeldType: k.type, gekoppeldRef: k.ref, omschrijving };
+    });
+    setKoppelZoek(k.naam);
+  }
   const gekoppeldeNaam = (() => {
     if (!f.gekoppeldType) return null;
     if (f.gekoppeldType === 'contributie') {
@@ -4561,7 +4577,7 @@ function TxForm({ item, accounts, members, contributies, workshops, inschrijving
             <input className={inputCls} style={inputStyle} placeholder="Zoek op naam…" value={koppelZoek} onChange={e => setKoppelZoek(e.target.value)} />
             <div className="max-h-48 overflow-y-auto space-y-1">
               {kandidaten.slice(0, 30).map(k => (
-                <button type="button" key={k.key} onClick={() => setF(s => ({ ...s, gekoppeldType: k.type, gekoppeldRef: k.ref }))}
+                <button type="button" key={k.key} onClick={() => kiesKandidaat(k)}
                   className="w-full text-left text-sm px-2.5 py-1.5 rounded-lg hover:bg-black/5 flex items-center justify-between"
                   style={{ background: k.score > 0 ? C.paperDim : 'transparent' }}>
                   <span>{k.label}</span>
